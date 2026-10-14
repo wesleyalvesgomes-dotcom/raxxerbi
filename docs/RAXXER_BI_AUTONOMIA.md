@@ -26,6 +26,7 @@
 
 - Criar autenticação real e autorização no servidor; não confiar em dados de perfil enviados pelo browser.
 - Proteger todas as rotas `/api/ai/*`, limitar tamanho de payload, aplicar rate limit e controlar custos.
+- Gerar e versionar um `package-lock.json` para instalações reproduzíveis.
 - Adicionar testes de contrato para todas as ações da IA e testes de migração que comprovem que dados reais são preservados.
 - Revisar todas as fontes de datas para usar um fuso horário consistente e não gravar histórico fictício.
 - Adicionar log de auditoria para ações executadas, erros e alterações de dados.
