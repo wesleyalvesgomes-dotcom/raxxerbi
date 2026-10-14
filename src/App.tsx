@@ -138,7 +138,7 @@ export default function App() {
 
   // Keep daily history updated with real current task counts for today
   useEffect(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getSaoPauloDateString();
     const dayName = new Date().toLocaleDateString('pt-BR', { weekday: 'long' });
     const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
 
@@ -272,7 +272,7 @@ export default function App() {
           progresso: g.progresso || 10,
           proximosPassos: g.proximosPassos || ['Começar primeiro passo'],
           categoria: (g.categoria as MemoryCategory) || 'metas',
-          dataCriacao: new Date().toISOString().split('T')[0],
+          dataCriacao: getSaoPauloDateString(),
           status: 'em_andamento',
         }));
         setGoals(newGoals);
@@ -285,9 +285,9 @@ export default function App() {
           prioridade: (t.prioridade as TaskPriority) || 'importante',
           status: 'pendente',
           concluida: false,
-          data: new Date().toISOString().split('T')[0],
+          data: getSaoPauloDateString(),
           categoria: (t.categoria as MemoryCategory) || 'projetos',
-          dataCriacao: new Date().toISOString().split('T')[0],
+          dataCriacao: getSaoPauloDateString(),
         }));
         setTasks(newTasks);
       }
@@ -301,10 +301,10 @@ export default function App() {
     const item: TaskItem = {
       ...newTask,
       id: `task-${Date.now()}`,
-      data: newTask.data || new Date().toISOString().split('T')[0],
+      data: newTask.data || getSaoPauloDateString(),
       status: newTask.status || 'pendente',
       concluida: newTask.concluida || false,
-      dataCriacao: new Date().toISOString().split('T')[0],
+      dataCriacao: getSaoPauloDateString(),
     };
     setTasks((prev) => [item, ...prev]);
   };
@@ -317,7 +317,7 @@ export default function App() {
               ...t,
               concluida: !t.concluida,
               status: !t.concluida ? 'concluida' : 'pendente',
-              dataConclusao: !t.concluida ? new Date().toISOString().split('T')[0] : undefined,
+              dataConclusao: !t.concluida ? getSaoPauloDateString() : undefined,
             }
           : t
       )
@@ -344,7 +344,7 @@ export default function App() {
               ...task,
               status,
               concluida: status === 'concluida',
-              dataConclusao: status === 'concluida' ? new Date().toISOString().split('T')[0] : task.dataConclusao,
+              dataConclusao: status === 'concluida' ? getSaoPauloDateString() : task.dataConclusao,
             }
           : task
       )
@@ -391,7 +391,7 @@ export default function App() {
     const item: GoalItem = {
       ...newGoal,
       id: `goal-${Date.now()}`,
-      dataCriacao: new Date().toISOString().split('T')[0],
+      dataCriacao: getSaoPauloDateString(),
     };
     setGoals((prev) => [item, ...prev]);
   };
@@ -427,7 +427,7 @@ export default function App() {
     const item: ProjectItem = {
       ...newProject,
       id: `proj-${Date.now()}`,
-      dataAtualizacao: new Date().toISOString().split('T')[0],
+      dataAtualizacao: getSaoPauloDateString(),
     };
     setProjects((prev) => [item, ...prev]);
   };
