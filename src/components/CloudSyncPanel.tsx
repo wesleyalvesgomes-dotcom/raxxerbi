@@ -296,7 +296,14 @@ export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =
           <p className="font-semibold text-white">Sincronização contínua: <span className={autoSyncEnabled ? 'text-emerald-300' : 'text-slate-400'}>{autoSyncEnabled ? 'ativa' : 'ainda não ativada'}</span></p>
           <p className="mt-1 text-xs leading-relaxed text-slate-400">Após a migração, alterações locais são enviadas automaticamente. Escritas usam controle otimista de versão para bloquear sobrescritas se outro dispositivo alterou o mesmo registro.</p>
           {autoSyncError && <p role="alert" className="mt-2 text-xs text-red-300">{autoSyncError}</p>}
-          {syncConflicts.length > 0 && <p className="mt-2 text-xs text-amber-200">{syncConflicts.length} conflito(s) detectado(s). Os registros foram preservados; revise e sincronize manualmente.</p>}
+          {syncConflicts.length > 0 && <div className="mt-2 text-xs text-amber-200">
+            <p>{syncConflicts.length} conflito(s) detectado(s). Os registros foram preservados; revise antes de editar novamente.</p>
+            <ul className="mt-2 space-y-1 text-slate-300">
+              {syncConflicts.slice(0, 5).map((conflict, index) => <li key={conflict.collection + ':' + conflict.id + ':' + index} className="break-all">{conflict.collection} · {conflict.id}</li>)}
+            </ul>
+            {syncConflicts.length > 5 && <p className="mt-1 text-slate-400">Mais {syncConflicts.length - 5} conflito(s) no registro local.</p>}
+            <button onClick={() => { localStorage.removeItem(CLOUD_SYNC_CONFLICTS_KEY); setSyncConflicts([]); }} className="mt-2 rounded-lg border border-amber-800/60 px-2.5 py-1.5 text-amber-100 hover:bg-amber-950/40">Limpar avisos (não altera dados)</button>
+          </div>}
         </div>
         {lastStats && <div className="mt-4 rounded-xl border border-blue-800/50 bg-blue-950/30 p-3 text-sm text-slate-200">
           <p>Enviados: <strong>{lastStats.uploaded}</strong> · Recebidos: <strong>{lastStats.downloaded}</strong></p>
