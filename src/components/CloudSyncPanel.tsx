@@ -276,7 +276,7 @@ export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
             <div className="text-sm text-slate-300">
               <p className="font-semibold text-white">Migração não destrutiva</p>
-              <p className="mt-1 leading-relaxed">O RAXXER só sincroniza quando você mandar. Valores que já existem na nuvem não são substituídos; registros que faltam são mesclados. Os dados locais não são apagados.</p>
+              <p className="mt-1 leading-relaxed">A migração inicial só acontece quando você manda. Depois da ativação, alterações locais são enviadas automaticamente com controle de versão. A migração não sobrescreve registros existentes e os dados locais não são apagados.</p>
             </div>
           </div>
         </div>
