@@ -127,3 +127,11 @@ CREATE TABLE IF NOT EXISTS user_data (
 );
 CREATE INDEX IF NOT EXISTS idx_user_data_collection
   ON user_data(user_id, collection, updated_at);
+
+
+-- Fixed-window per-user rate limit for AI API requests; one row per account.
+CREATE TABLE IF NOT EXISTS api_rate_limits (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  window_start INTEGER NOT NULL,
+  request_count INTEGER NOT NULL DEFAULT 0 CHECK (request_count >= 0)
+);
