@@ -51,7 +51,7 @@ O Worker valida assinatura RS256, emissor, audiência, expiração e identidade 
 - GET /api/data/:collection/:id lê um registro específico.
 - PUT /api/data/:collection/:id com JSON { "data": ... } cria/atualiza um registro.
 - DELETE /api/data/:collection/:id remove somente aquele registro do usuário autenticado.
-- Coleções permitidas: profile, tasks, goals, memories, projects, daily_history, weekly_reviews, commercial_leads, commercial_lead_history, commercial_interactions, commercial_visits, commercial_proposals, commercial_sales e commercial_goals.
+- Coleções permitidas: profile, tasks, goals, memories, projects, daily_history, weekly_reviews, commercial_leads, commercial_lead_history, commercial_interactions, commercial_visits, commercial_proposals, commercial_sales, commercial_goals e scheduled_outputs.
 - Cada item tem limite de 64 KB; a API não aceita user_id do cliente. Não faça a migração automática do localStorage até implementar e testar a estratégia de importação, reconciliação e recuperação.
 
 
