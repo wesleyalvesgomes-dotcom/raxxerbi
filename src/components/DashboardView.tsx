@@ -1,3 +1,4 @@
+import { getSaoPauloDateString } from '../utils/date';
 import React, { useState } from 'react';
 import {
   Sparkles,
@@ -70,7 +71,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         status: 'pendente',
         categoria: 'geral',
         concluida: false,
-        dataCriacao: new Date().toISOString().split('T')[0],
+        dataCriacao: getSaoPauloDateString(),
       });
     }
 
