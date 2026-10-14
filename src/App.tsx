@@ -41,20 +41,15 @@ const getSanitizedLocalStorage = <T,>(key: string, fallback: T): T => {
     const raw = localStorage.getItem(key);
     if (!raw) return fallback;
 
-    let cleanRaw = raw;
-    if (cleanRaw.includes('Alex') || cleanRaw.includes('alex')) {
-      cleanRaw = cleanRaw.replace(/Alex/g, 'Wesley').replace(/alex/g, 'wesley');
-    }
-
-    const parsed = JSON.parse(cleanRaw);
+    const parsed = JSON.parse(raw);
 
     if (key === 'sb_profile') {
       const p = parsed as UserProfile;
       return {
         ...DEFAULT_USER_PROFILE,
         ...p,
-        nome: p.nome && !p.nome.includes('Alex') && p.nome !== 'Usuário' ? p.nome : 'Wesley Gomes',
-        comoSerChamado: p.comoSerChamado && !p.comoSerChamado.includes('Alex') ? p.comoSerChamado : 'Wesley',
+        nome: p.nome && p.nome !== 'Usuário' ? p.nome : DEFAULT_USER_PROFILE.nome,
+        comoSerChamado: p.comoSerChamado || DEFAULT_USER_PROFILE.comoSerChamado,
       } as unknown as T;
     }
 
