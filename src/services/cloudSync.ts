@@ -166,12 +166,16 @@ async function flushChanges(key?: string): Promise<void> {
     return;
   }
   syncInFlight = true;
+  let nextKey = key;
   try {
     localStorage.removeItem(CLOUD_SYNC_ERROR_KEY);
     do {
       syncQueued = false;
-      const mappings = key ? CLOUD_STORAGE_MAPPINGS.filter((mapping) => mapping.key === key) : CLOUD_STORAGE_MAPPINGS;
+      const mappings = nextKey ? CLOUD_STORAGE_MAPPINGS.filter((mapping) => mapping.key === nextKey) : CLOUD_STORAGE_MAPPINGS;
       for (const mapping of mappings) await syncMapping(mapping);
+      // If another collection changes while requests are in flight, reconcile all
+      // collections on the next pass so the queued event cannot be lost.
+      nextKey = undefined;
       dispatchStatus();
     } while (syncQueued);
   } catch (error) {
