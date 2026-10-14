@@ -163,12 +163,17 @@ function normalizeLead(raw: any): CommercialLeadItem {
 // ==========================================
 export function getStoredLeads(): CommercialLeadItem[] {
   const rawList = readFromStorage<any[]>(COMMERCIAL_STORAGE_KEYS.LEADS, []);
-  if (!Array.isArray(rawList) || rawList.length === 0) {
-    // Se vazio no primeiro acesso (ou novo ambiente como Cloudflare), inicializar com os dados modelo oficiais
-    writeToStorage(COMMERCIAL_STORAGE_KEYS.LEADS, INITIAL_COMMERCIAL_LEADS);
-    return INITIAL_COMMERCIAL_LEADS.map(normalizeLead);
+  if (!Array.isArray(rawList) || rawList.length === 0) return [];
+
+  // Migração segura: remove apenas IDs pertencentes ao conjunto de demonstração
+  // conhecido no código. Leads criados pelo usuário são preservados.
+  const demoIds = new Set(INITIAL_COMMERCIAL_LEADS.map((lead) => lead.id));
+  const productionLeads = rawList.filter((lead) => !lead?.id || !demoIds.has(lead.id));
+  if (productionLeads.length !== rawList.length) {
+    writeToStorage(COMMERCIAL_STORAGE_KEYS.LEADS, productionLeads);
   }
-  return rawList.map(normalizeLead);
+
+  return productionLeads.map(normalizeLead);
 }
 
 export function saveStoredLeads(leads: CommercialLeadItem[]): void {
@@ -710,11 +715,15 @@ export function updateStoredSaleStatus(id: string, status: SaleStatus): Commerci
 
 export function getStoredCommercialGoals(): CommercialGoalItem[] {
   const rawList = readFromStorage<CommercialGoalItem[]>(COMMERCIAL_STORAGE_KEYS.GOALS, []);
-  if (!Array.isArray(rawList) || rawList.length === 0) {
-    writeToStorage(COMMERCIAL_STORAGE_KEYS.GOALS, INITIAL_COMMERCIAL_GOALS);
-    return INITIAL_COMMERCIAL_GOALS;
+  if (!Array.isArray(rawList) || rawList.length === 0) return [];
+
+  // Remove apenas metas de demonstração identificadas pelos IDs do seed original.
+  const demoIds = new Set(INITIAL_COMMERCIAL_GOALS.map((goal) => goal.id));
+  const productionGoals = rawList.filter((goal) => !demoIds.has(goal.id));
+  if (productionGoals.length !== rawList.length) {
+    writeToStorage(COMMERCIAL_STORAGE_KEYS.GOALS, productionGoals);
   }
-  return rawList;
+  return productionGoals;
 }
 
 export function saveStoredCommercialGoals(goals: CommercialGoalItem[]): void {
