@@ -354,7 +354,7 @@ export default function App() {
 
   const handleRescheduleTask = (searchTitleOrId: string, newDate: string): boolean => {
     const query = searchTitleOrId?.trim().toLocaleLowerCase();
-    if (!query || !/^\\d{4}-\\d{2}-\\d{2}$/.test(newDate)) return false;
+    if (!query || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return false;
 
     const exact = tasks.find(
       (task) => task.id === searchTitleOrId || task.titulo.trim().toLocaleLowerCase() === query
