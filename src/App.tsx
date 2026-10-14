@@ -270,7 +270,15 @@ export default function App() {
           data: new Date().toISOString(),
           origin: 'interview',
         }));
-        setMemories(newMems);
+        setMemories((prev) => {
+          const existing = new Set(
+            prev.map((memory) => `${memory.titulo.trim().toLocaleLowerCase()}|${memory.conteudo.trim().toLocaleLowerCase()}`)
+          );
+          const uniqueNewMemories = newMems.filter(
+            (memory) => !existing.has(`${memory.titulo.trim().toLocaleLowerCase()}|${memory.conteudo.trim().toLocaleLowerCase()}`)
+          );
+          return [...uniqueNewMemories, ...prev];
+        });
       }
 
 
