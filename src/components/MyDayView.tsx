@@ -1,3 +1,4 @@
+import { getSaoPauloDateString } from '../utils/date';
 import React, { useState } from 'react';
 import {
   Plus,
@@ -55,7 +56,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({
       categoria,
       notas: notas.trim() || undefined,
       concluida: false,
-      dataCriacao: new Date().toISOString().split('T')[0],
+      dataCriacao: getSaoPauloDateString(),
     });
 
     setTitulo('');
