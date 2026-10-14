@@ -7,6 +7,7 @@
 - Dados pessoais e comerciais mantidos no `localStorage`; isso não oferece sincronização confiável entre navegadores/dispositivos nem execução em segundo plano.
 - Não foi encontrado binding D1/R2, autenticação de usuário, isolamento por usuário, agenda Cron, fila de execução ou rotina de recuperação de falhas.
 - O Worker aceita chamadas às rotas de IA sem autenticar o usuário. Se publicado assim, terceiros podem consumir a cota da chave Gemini.
+- O código usava `gemini-3.7-flash`, que foi descontinuado em 8 de outubro de 2026; o Google encaminha chamadas para o modelo substituto, mas recomenda atualizar o identificador para `gemini-3.8-flash`.
 - O contrato de ações do chat estava divergente: o schema declarava `type + payload`, enquanto a interface executava campos diretos e esperava nomes diferentes.
 - Os dados comerciais de demonstração eram carregados automaticamente quando o armazenamento estava vazio, contaminando os indicadores.
 - A referência de data do prompt usava UTC; para o usuário no Brasil, isso pode deslocar a data perto da virada do dia.
@@ -19,10 +20,11 @@
 4. Bloqueio da exclusão permanente de tarefas por ação gerada pela IA; o caminho seguro é cancelar.
 5. Parada do carregamento automático de leads/metas fictícios e migração dos registros com IDs do conjunto de demonstração conhecido.
 6. Uso de data de São Paulo compartilhada pelo prompt, painel, histórico diário e telas de tarefas.
-7. Remoção da reescrita global de “Alex” para “Wesley” no armazenamento local, que poderia corromper memórias legítimas.
-8. Correção dos contadores do histórico diário, que antes tratavam todas as tarefas acumuladas como atividade de hoje.
-9. Alteração de status/reagendamento somente quando existe um único alvo; caso contrário, o chat informa que não executou.
-10. Bloqueio da criação automática de tarefas e metas inferidas no onboarding.
+7. Atualização do identificador do Gemini para `gemini-3.8-flash`, conforme a documentação oficial do Google.
+8. Remoção da reescrita global de “Alex” para “Wesley” no armazenamento local, que poderia corromper memórias legítimas.
+9. Correção dos contadores do histórico diário, que antes tratavam todas as tarefas acumuladas como atividade de hoje.
+10. Alteração de status/reagendamento somente quando existe um único alvo; caso contrário, o chat informa que não executou.
+11. Bloqueio da criação automática de tarefas e metas inferidas no onboarding.
 
 ## Plano para o RAXXER operar com autonomia
 
