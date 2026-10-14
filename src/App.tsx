@@ -32,15 +32,7 @@ import {
   WeeklyReview,
 } from './types';
 
-import {
-  DEFAULT_USER_PROFILE,
-  INITIAL_DAILY_HISTORY,
-  INITIAL_GOALS,
-  INITIAL_MEMORIES,
-  INITIAL_PROJECTS,
-  INITIAL_TASKS,
-  INITIAL_WEEKLY_REVIEWS,
-} from './utils/initialData';
+import { DEFAULT_USER_PROFILE } from './utils/initialData';
 import { getSaoPauloDateString, getSaoPauloWeekday } from './utils/date';
 
 // Helper to sanitize local storage data and strip legacy seed or "Alex" references
@@ -115,27 +107,27 @@ export default function App() {
   );
 
   const [memories, setMemories] = useState<MemoryItem[]>(() =>
-    getSanitizedLocalStorage<MemoryItem[]>('sb_memories', INITIAL_MEMORIES)
+    getSanitizedLocalStorage<MemoryItem[]>('sb_memories', [])
   );
 
   const [tasks, setTasks] = useState<TaskItem[]>(() =>
-    getSanitizedLocalStorage<TaskItem[]>('sb_tasks', INITIAL_TASKS)
+    getSanitizedLocalStorage<TaskItem[]>('sb_tasks', [])
   );
 
   const [goals, setGoals] = useState<GoalItem[]>(() =>
-    getSanitizedLocalStorage<GoalItem[]>('sb_goals', INITIAL_GOALS)
+    getSanitizedLocalStorage<GoalItem[]>('sb_goals', [])
   );
 
   const [projects, setProjects] = useState<ProjectItem[]>(() =>
-    getSanitizedLocalStorage<ProjectItem[]>('sb_projects', INITIAL_PROJECTS)
+    getSanitizedLocalStorage<ProjectItem[]>('sb_projects', [])
   );
 
   const [reviews, setReviews] = useState<WeeklyReview[]>(() =>
-    getSanitizedLocalStorage<WeeklyReview[]>('sb_reviews', INITIAL_WEEKLY_REVIEWS)
+    getSanitizedLocalStorage<WeeklyReview[]>('sb_reviews', [])
   );
 
   const [dailyHistory, setDailyHistory] = useState<DailyHistoryLog[]>(() =>
-    getSanitizedLocalStorage<DailyHistoryLog[]>('sb_daily_history', INITIAL_DAILY_HISTORY)
+    getSanitizedLocalStorage<DailyHistoryLog[]>('sb_daily_history', [])
   );
 
   // Keep daily history updated with real current task counts for today
