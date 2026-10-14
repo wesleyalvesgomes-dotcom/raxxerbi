@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Cloud, CloudUpload, Download, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { CLOUD_SYNC_CONFLICTS_KEY, CLOUD_SYNC_ENABLED_KEY, CLOUD_SYNC_ERROR_KEY, CLOUD_SYNC_STATUS_EVENT, CLOUD_SYNC_VERSIONS_KEY } from '../services/cloudSync';
 
 type LocalMapping = { key: string; collection: string; shape: 'array' | 'object'; idField?: string };
 
@@ -20,7 +21,7 @@ const MAPPINGS: LocalMapping[] = [
   { key: 'raxxer_com_goals', collection: 'commercial_goals', shape: 'array' },
 ];
 
-type CloudRecord = { id: string; data: unknown };
+type CloudRecord = { id: string; data: unknown; updatedAt?: string };
 type SyncStats = { uploaded: number; downloaded: number; conflicts: number; ignored: number };
 type ScheduledJob = { id: string; job_type: string; status: string; run_at: string; recurrence: 'once' | 'daily' | 'weekly'; attempt_count: number; last_error?: string | null };
 type ScheduledOutput = { id: string; title: string; summary: string; createdAt: string; date: string; stats?: { openTasks: number; dueToday: number; overdueTasks: number; activeGoals: number } };
@@ -62,7 +63,9 @@ async function requestJson(path: string, init?: RequestInit): Promise<any> {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const reason = typeof body.error === 'string' ? body.error : 'Falha na comunicação com o servidor.';
-    throw new Error(response.status === 401 ? 'Acesso não autenticado. Entre pelo Cloudflare Access e tente novamente.' : reason);
+    const error = new Error(response.status === 401 ? 'Acesso não autenticado. Entre pelo Cloudflare Access e tente novamente.' : reason) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
   return body;
 }
@@ -78,6 +81,21 @@ export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =
   const [jobs, setJobs] = useState<ScheduledJob[]>([]);
   const [outputs, setOutputs] = useState<ScheduledOutput[]>([]);
   const [autonomyLoaded, setAutonomyLoaded] = useState(false);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+  const [autoSyncError, setAutoSyncError] = useState('');
+  const [syncConflicts, setSyncConflicts] = useState<Array<{ collection: string; id: string; detectedAt: string }>>([]);
+
+  React.useEffect(() => {
+    const refreshSyncStatus = () => {
+      setAutoSyncEnabled(localStorage.getItem(CLOUD_SYNC_ENABLED_KEY) === 'true');
+      setAutoSyncError(localStorage.getItem(CLOUD_SYNC_ERROR_KEY) || '');
+      try { setSyncConflicts(JSON.parse(localStorage.getItem(CLOUD_SYNC_CONFLICTS_KEY) || '[]')); }
+      catch { setSyncConflicts([]); }
+    };
+    refreshSyncStatus();
+    window.addEventListener(CLOUD_SYNC_STATUS_EVENT, refreshSyncStatus);
+    return () => window.removeEventListener(CLOUD_SYNC_STATUS_EVENT, refreshSyncStatus);
+  }, []);
   const totalLocalRecords = useMemo(() => {
     try { return MAPPINGS.reduce((sum, mapping) => sum + parseLocal(mapping).length, 0); }
     catch { return 0; }
@@ -164,6 +182,8 @@ export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =
     setMessage('');
     setError('');
     const stats: SyncStats = { uploaded: 0, downloaded: 0, conflicts: 0, ignored: 0 };
+    let versions: Record<string, Record<string, string>> = {};
+    try { versions = JSON.parse(localStorage.getItem(CLOUD_SYNC_VERSIONS_KEY) || '{}'); } catch { versions = {}; }
     try {
       await requestJson('/api/me');
       for (const mapping of MAPPINGS) {
@@ -172,27 +192,41 @@ export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =
         const remoteRecords: CloudRecord[] = Array.isArray(remoteResponse.items) ? remoteResponse.items : [];
         const remoteById = new Map(remoteRecords.map((record) => [record.id, record]));
         const localById = new Map(localRecords.map((record) => [record.id, record]));
+        const collectionVersions = versions[mapping.collection] || {};
 
-        // Upload only records missing in D1. Existing cloud values are never overwritten.
+        // Initial migration only inserts missing records; a conflict never overwrites cloud data.
         for (const record of localRecords) {
-          if (remoteById.has(record.id)) {
+          const remote = remoteById.get(record.id);
+          if (remote) {
             stats.conflicts += 1;
+            if (remote.updatedAt) collectionVersions[record.id] = remote.updatedAt;
             continue;
           }
-          await requestJson('/api/data/' + mapping.collection + '/' + encodeURIComponent(record.id), {
-            method: 'PUT',
-            body: JSON.stringify({ data: record.data }),
-          });
-          stats.uploaded += 1;
+          try {
+            const saved = await requestJson('/api/data/' + mapping.collection + '/' + encodeURIComponent(record.id), {
+              method: 'PUT',
+              body: JSON.stringify({ data: record.data, expectedUpdatedAt: null }),
+            });
+            if (saved.updatedAt) collectionVersions[record.id] = saved.updatedAt;
+            stats.uploaded += 1;
+          } catch (err) {
+            if ((err as Error & { status?: number }).status === 409) {
+              stats.conflicts += 1;
+              continue;
+            }
+            throw err;
+          }
         }
 
         // Pull only records missing locally. Local values win every conflict.
         const merged = new Map(localById);
         for (const record of remoteRecords) {
+          if (record.updatedAt) collectionVersions[record.id] = record.updatedAt;
           if (merged.has(record.id)) continue;
           merged.set(record.id, record);
           stats.downloaded += 1;
         }
+        versions[mapping.collection] = collectionVersions;
         if (mapping.shape === 'object') {
           const profile = merged.get('profile');
           if (profile && !localStorage.getItem(mapping.key)) {
@@ -206,8 +240,12 @@ export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =
           }
         }
       }
+      localStorage.setItem(CLOUD_SYNC_VERSIONS_KEY, JSON.stringify(versions));
+      localStorage.setItem(CLOUD_SYNC_ENABLED_KEY, 'true');
+      localStorage.removeItem(CLOUD_SYNC_ERROR_KEY);
+      setAutoSyncEnabled(true);
       setLastStats(stats);
-      setMessage('Sincronização concluída sem sobrescrever registros existentes. Recarregue o RAXXER para exibir os dados recebidos.');
+      setMessage('Migração concluída. A sincronização contínua está ativa; alterações futuras serão enviadas com controle de versão. Recarregue o RAXXER para exibir os dados recebidos.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível sincronizar. Os dados locais foram mantidos.');
     } finally {
@@ -250,6 +288,12 @@ export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =
           </div>
         </div>
 
+        <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900/50 p-3 text-sm">
+          <p className="font-semibold text-white">Sincronização contínua: <span className={autoSyncEnabled ? 'text-emerald-300' : 'text-slate-400'}>{autoSyncEnabled ? 'ativa' : 'ainda não ativada'}</span></p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">Após a migração, alterações locais são enviadas automaticamente. Escritas usam controle otimista de versão para bloquear sobrescritas se outro dispositivo alterou o mesmo registro.</p>
+          {autoSyncError && <p role="alert" className="mt-2 text-xs text-red-300">{autoSyncError}</p>}
+          {syncConflicts.length > 0 && <p className="mt-2 text-xs text-amber-200">{syncConflicts.length} conflito(s) detectado(s). Os registros foram preservados; revise e sincronize manualmente.</p>}
+        </div>
         {lastStats && <div className="mt-4 rounded-xl border border-blue-800/50 bg-blue-950/30 p-3 text-sm text-slate-200">
           <p>Enviados: <strong>{lastStats.uploaded}</strong> · Recebidos: <strong>{lastStats.downloaded}</strong></p>
           <p>Conflitos preservados: <strong>{lastStats.conflicts}</strong> · Registros ignorados: <strong>{lastStats.ignored}</strong></p>
