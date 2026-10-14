@@ -105,11 +105,9 @@ async function syncMapping(mapping: LocalMapping): Promise<void> {
     dispatchStatus();
     return;
   }
-  previous.set(mapping.key, current);
+  const nextSnapshot = new Map(before);
   const versions = readVersions();
   const collectionVersions = versions[mapping.collection] || {};
-  const beforeRecords = new Map(readRecordsFromSerialized(mapping, before));
-  const currentRecords = new Map(readRecordsFromSerialized(mapping, current));
 
   for (const [id, serialized] of current) {
     if (before.get(id) === serialized) continue;
@@ -123,6 +121,7 @@ async function syncMapping(mapping: LocalMapping): Promise<void> {
       });
       if (result.updatedAt) collectionVersions[id] = result.updatedAt;
       else delete collectionVersions[id];
+      nextSnapshot.set(id, serialized);
     } catch (error) {
       if ((error as Error & { status?: number }).status === 409) {
         recordConflict({ key: mapping.key, collection: mapping.collection, id, detectedAt: new Date().toISOString() });
@@ -140,24 +139,23 @@ async function syncMapping(mapping: LocalMapping): Promise<void> {
         body: JSON.stringify({ expectedUpdatedAt: collectionVersions[id] }),
       });
       delete collectionVersions[id];
+      nextSnapshot.delete(id);
     } catch (error) {
       if ((error as Error & { status?: number }).status === 409) {
         recordConflict({ key: mapping.key, collection: mapping.collection, id, detectedAt: new Date().toISOString() });
       } else if ((error as Error & { status?: number }).status === 404) {
         delete collectionVersions[id];
+        nextSnapshot.delete(id);
       } else {
         localStorage.setItem(CLOUD_SYNC_ERROR_KEY, error instanceof Error ? error.message : 'Falha ao remover dados de D1.');
       }
     }
   }
 
+  previous.set(mapping.key, nextSnapshot);
   versions[mapping.collection] = collectionVersions;
   writeVersions(versions);
   dispatchStatus();
-}
-
-function readRecordsFromSerialized(mapping: LocalMapping, records: Map<string, string>): Array<[string, unknown]> {
-  return Array.from(records.entries()).map(([id, serialized]) => [id, JSON.parse(serialized)]);
 }
 
 async function flushChanges(key?: string): Promise<void> {
@@ -168,11 +166,11 @@ async function flushChanges(key?: string): Promise<void> {
   }
   syncInFlight = true;
   try {
+    localStorage.removeItem(CLOUD_SYNC_ERROR_KEY);
     do {
       syncQueued = false;
       const mappings = key ? CLOUD_STORAGE_MAPPINGS.filter((mapping) => mapping.key === key) : CLOUD_STORAGE_MAPPINGS;
       for (const mapping of mappings) await syncMapping(mapping);
-      localStorage.removeItem(CLOUD_SYNC_ERROR_KEY);
       dispatchStatus();
     } while (syncQueued);
   } catch (error) {
