@@ -14,6 +14,8 @@ import {
 interface D1Statement {
   bind(...values: unknown[]): D1Statement;
   first<T = Record<string, unknown>>(): Promise<T | null>;
+  all<T = Record<string, unknown>>(): Promise<{ results: T[] }>;
+  run(): Promise<unknown>;
 }
 
 interface D1Database {
@@ -51,6 +53,22 @@ interface AuthenticatedUser {
 }
 
 const MAX_REQUEST_BYTES = 64 * 1024;
+const DATA_COLLECTIONS = new Set([
+  'profile',
+  'tasks',
+  'goals',
+  'memories',
+  'projects',
+  'daily_history',
+  'weekly_reviews',
+  'commercial_leads',
+  'commercial_lead_history',
+  'commercial_interactions',
+  'commercial_visits',
+  'commercial_proposals',
+  'commercial_sales',
+  'commercial_goals',
+]);
 let jwksCache: { expiresAt: number; keys: JsonWebKey[] } | undefined;
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -203,6 +221,109 @@ export default {
           return jsonResponse({ error: 'Método não permitido. Utilize GET.' }, 405);
         }
         return jsonResponse({ user: { id: user.id, email: user.email, name: user.name } });
+      }
+
+      // User-scoped storage API used for gradual, non-destructive localStorage migration.
+      if (url.pathname.startsWith('/api/data/')) {
+        const segments = url.pathname.split('/').filter(Boolean);
+        if (segments.length < 3 || segments.length > 4) {
+          return jsonResponse({ error: 'Rota de dados inválida.' }, 404);
+        }
+
+        let collection: string;
+        let itemId: string | undefined;
+        try {
+          collection = decodeURIComponent(segments[2]);
+          itemId = segments[3] ? decodeURIComponent(segments[3]) : undefined;
+        } catch {
+          return jsonResponse({ error: 'Identificador inválido.' }, 400);
+        }
+        if (!DATA_COLLECTIONS.has(collection)) {
+          return jsonResponse({ error: 'Coleção não permitida.' }, 404);
+        }
+        if (itemId !== undefined && (!itemId.trim() || itemId.length > 200)) {
+          return jsonResponse({ error: 'Identificador inválido.' }, 400);
+        }
+
+        if (request.method === 'GET') {
+          try {
+            if (itemId !== undefined) {
+              const record = await env.DB.prepare(
+                'SELECT item_id, data_json FROM user_data WHERE user_id = ? AND collection = ? AND item_id = ?'
+              ).bind(user.id, collection, itemId).first<{ item_id: string; data_json: string }>();
+              if (!record) return jsonResponse({ error: 'Registro não encontrado.' }, 404);
+              return jsonResponse({ id: record.item_id, data: JSON.parse(record.data_json) });
+            }
+            const records = await env.DB.prepare(
+              'SELECT item_id, data_json FROM user_data WHERE user_id = ? AND collection = ? ORDER BY updated_at DESC, item_id ASC'
+            ).bind(user.id, collection).all<{ item_id: string; data_json: string }>();
+            return jsonResponse({
+              collection,
+              items: records.results.map((record) => ({
+                id: record.item_id,
+                data: JSON.parse(record.data_json),
+              })),
+            });
+          } catch (error) {
+            console.error('Falha ao ler dados do usuário no D1:', error);
+            return jsonResponse({ error: 'Não foi possível ler os dados persistidos.' }, 503);
+          }
+        }
+
+        if (request.method === 'PUT' && itemId !== undefined) {
+          const contentLength = Number(request.headers.get('Content-Length') || '0');
+          if (contentLength > MAX_REQUEST_BYTES) {
+            return jsonResponse({ error: 'A requisição excede o limite de 64 KB.' }, 413);
+          }
+          let recordBody: any;
+          try {
+            const rawBody = await request.text();
+            if (new TextEncoder().encode(rawBody).byteLength > MAX_REQUEST_BYTES) {
+              return jsonResponse({ error: 'A requisição excede o limite de 64 KB.' }, 413);
+            }
+            recordBody = JSON.parse(rawBody);
+          } catch {
+            return jsonResponse({ error: 'O corpo da requisição deve ser JSON válido.' }, 400);
+          }
+          if (!recordBody || !Object.prototype.hasOwnProperty.call(recordBody, 'data')) {
+            return jsonResponse({ error: 'O campo "data" é obrigatório.' }, 400);
+          }
+          const serialized = JSON.stringify(recordBody.data);
+          if (typeof serialized !== 'string' || serialized.length > MAX_REQUEST_BYTES) {
+            return jsonResponse({ error: 'O registro é inválido ou excede 64 KB.' }, 413);
+          }
+          try {
+            await env.DB.prepare(
+              `INSERT INTO user_data (user_id, collection, item_id, data_json, updated_at)
+               VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+               ON CONFLICT(user_id, collection, item_id) DO UPDATE SET
+                 data_json = excluded.data_json,
+                 updated_at = excluded.updated_at`
+            ).bind(user.id, collection, itemId, serialized).run();
+            return jsonResponse({ ok: true, id: itemId });
+          } catch (error) {
+            console.error('Falha ao salvar dados do usuário no D1:', error);
+            return jsonResponse({ error: 'Não foi possível salvar o registro.' }, 503);
+          }
+        }
+
+        if (request.method === 'DELETE' && itemId !== undefined) {
+          try {
+            await env.DB.prepare(
+              'DELETE FROM user_data WHERE user_id = ? AND collection = ? AND item_id = ?'
+            ).bind(user.id, collection, itemId).run();
+            return jsonResponse({ ok: true, id: itemId });
+          } catch (error) {
+            console.error('Falha ao excluir dados do usuário no D1:', error);
+            return jsonResponse({ error: 'Não foi possível excluir o registro.' }, 503);
+          }
+        }
+
+        return jsonResponse({
+          error: itemId === undefined
+            ? 'A coleção aceita apenas GET.'
+            : 'Método não permitido para este registro. Utilize GET, PUT ou DELETE.',
+        }, 405);
       }
 
       if (request.method !== 'POST') {
