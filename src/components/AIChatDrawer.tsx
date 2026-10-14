@@ -126,6 +126,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
         data.actions.forEach((act: any) => {
           switch (act.type) {
             case 'add_memory':
+              if (typeof act.conteudo !== 'string' || !act.conteudo.trim()) break;
               onAddMemory({
                 categoria: act.categoria || 'identidade',
                 titulo: act.titulo || 'Memória Aprendida',
@@ -136,7 +137,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
               break;
 
             case 'add_task':
-              if (onAddTask) {
+              if (onAddTask && typeof act.titulo === 'string' && act.titulo.trim()) {
                 onAddTask({
                   titulo: act.titulo || 'Nova Tarefa',
                   descricao: act.descricao || '',
@@ -151,25 +152,34 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
               break;
 
             case 'update_task_status':
-              if (onUpdateTaskStatus) {
+              if (
+                onUpdateTaskStatus &&
+                typeof act.searchTitleOrId === 'string' && act.searchTitleOrId.trim() &&
+                ['pendente', 'em_andamento', 'concluida', 'adiada', 'cancelada'].includes(act.status)
+              ) {
                 onUpdateTaskStatus(act.searchTitleOrId, act.status);
               }
               break;
 
             case 'reschedule_task':
-              if (onRescheduleTask) {
+              if (
+                onRescheduleTask &&
+                typeof act.searchTitleOrId === 'string' && act.searchTitleOrId.trim() &&
+                typeof act.newDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(act.newDate)
+              ) {
                 onRescheduleTask(act.searchTitleOrId, act.newDate);
               }
               break;
 
             case 'delete_task':
-              if (onDeleteTask) {
+              // A IA não pode apagar registros permanentemente; use status cancelada.
+              if (false && onDeleteTask) {
                 onDeleteTask(act.searchTitleOrId);
               }
               break;
 
             case 'add_goal':
-              if (onAddGoal) {
+              if (onAddGoal && typeof act.titulo === 'string' && act.titulo.trim()) {
                 onAddGoal({
                   titulo: act.titulo || 'Nova Meta',
                   descricao: act.descricao || '',
