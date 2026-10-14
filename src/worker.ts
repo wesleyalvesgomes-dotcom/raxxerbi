@@ -398,6 +398,9 @@ export default {
           } catch { return jsonResponse({ error: 'JSON inválido.' }, 400); }
           const jobType = body?.type;
           const runAt = typeof body?.runAt === 'string' ? new Date(body.runAt) : null;
+          if (body?.recurrence !== undefined && !['once', 'daily', 'weekly'].includes(body.recurrence)) {
+            return jsonResponse({ error: 'Recorrência inválida. Use once, daily ou weekly.' }, 400);
+          }
           const recurrence = body?.recurrence === 'daily' || body?.recurrence === 'weekly' ? body.recurrence : 'once';
           const idempotencyKey = typeof body?.idempotencyKey === 'string' ? body.idempotencyKey.trim() : '';
           if (jobType !== 'daily_briefing' && jobType !== 'weekly_review') {
