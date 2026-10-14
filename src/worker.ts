@@ -326,6 +326,34 @@ export default {
         }, 405);
       }
 
+      // Persistent per-user rate limit: protect Gemini quota from accidental loops and abuse.
+      if (url.pathname.startsWith('/api/ai/')) {
+        const windowStart = Math.floor(Date.now() / 60000);
+        try {
+          const rate = await env.DB.prepare(
+            `INSERT INTO api_rate_limits (user_id, window_start, request_count)
+             VALUES (?, ?, 1)
+             ON CONFLICT(user_id) DO UPDATE SET
+               request_count = CASE
+                 WHEN api_rate_limits.window_start = excluded.window_start
+                 THEN api_rate_limits.request_count + 1
+                 ELSE 1
+               END,
+               window_start = excluded.window_start
+             RETURNING request_count`
+          ).bind(user.id, windowStart).first<{ request_count: number }>();
+          if (!rate || rate.request_count > 30) {
+            return jsonResponse({
+              error: 'Limite temporário de uso da IA atingido. Aguarde um minuto e tente novamente.',
+              code: 'AI_RATE_LIMITED',
+            }, 429);
+          }
+        } catch (error) {
+          console.error('Falha ao verificar limite de uso da IA:', error);
+          return jsonResponse({ error: 'Não foi possível validar o limite de uso da IA.' }, 503);
+        }
+      }
+
       if (request.method !== 'POST') {
         return jsonResponse({ error: 'Método não permitido. Utilize POST.' }, 405);
       }
