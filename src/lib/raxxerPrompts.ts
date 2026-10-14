@@ -317,8 +317,9 @@ export function buildChatPrompt({
   dailyHistory?: any[];
   chatHistory: any[];
 }): string {
-  const todayStr = new Date().toISOString().split('T')[0];
-  const dayOfWeek = new Date().toLocaleDateString('pt-BR', { weekday: 'long' });
+  const now = new Date();
+  const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(now);
+  const dayOfWeek = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', timeZone: 'America/Sao_Paulo' }).format(now);
 
   return `
 Você é o RAXXER, Secretário Pessoal de ${profile?.comoSerChamado || profile?.nome || 'Wesley'}.
