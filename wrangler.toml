@@ -9,7 +9,7 @@ command = "npm run build"
 [[d1_databases]]
 binding = "DB"
 database_name = "raxxerbi-db"
-database_id = "REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID"
+database_id = "7bd0bac2-3b1e-4c59-90bb-018dbbe872dc"
 migrations_dir = "migrations"
 
 [assets]
