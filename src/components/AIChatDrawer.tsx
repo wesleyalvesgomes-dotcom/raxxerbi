@@ -126,10 +126,10 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
         data.actions.forEach((act: any) => {
           switch (act.type) {
             case 'add_memory':
-              if (typeof act.conteudo !== 'string' || !act.conteudo.trim()) break;
+              if (typeof act.titulo !== 'string' || !act.titulo.trim() || typeof act.conteudo !== 'string' || !act.conteudo.trim()) break;
               onAddMemory({
                 categoria: act.categoria || 'identidade',
-                titulo: act.titulo || 'Memória Aprendida',
+                titulo: act.titulo,
                 conteudo: act.conteudo,
                 importancia: act.importancia || 'alta',
                 origin: 'auto_extracted',
@@ -172,10 +172,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
               break;
 
             case 'delete_task':
-              // A IA não pode apagar registros permanentemente; use status cancelada.
-              if (false && onDeleteTask) {
-                onDeleteTask(act.searchTitleOrId);
-              }
+              // Ações da IA nunca apagam registros permanentemente.
               break;
 
             case 'add_goal':
