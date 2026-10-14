@@ -24,3 +24,5 @@ jobs:
         run: npm run build
       - name: TypeScript check
         run: npm run lint
+      - name: Worker authentication tests
+        run: npm test
