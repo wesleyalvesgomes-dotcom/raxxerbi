@@ -61,7 +61,7 @@ export async function callGeminiREST({
   systemInstruction = SECOND_BRAIN_SYSTEM_INSTRUCTION,
   responseMimeType,
   responseSchema,
-  model = 'gemini-3.7-flash',
+  model = 'gemini-3.8-flash',
 }: CallGeminiRESTOptions): Promise<string> {
   if (!apiKey || apiKey.trim() === '') {
     throw new Error('Chave GEMINI_API_KEY não informada ou vazia.');
