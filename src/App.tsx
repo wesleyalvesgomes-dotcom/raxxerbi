@@ -175,19 +175,6 @@ export default function App() {
     });
   }, [tasks]);
 
-  // Purge any legacy demo or Alex data stored in localStorage on mount
-  useEffect(() => {
-    ['sb_profile', 'sb_memories', 'sb_tasks', 'sb_goals', 'sb_projects', 'sb_reviews', 'sb_chat_history', 'sb_daily_history'].forEach((key) => {
-      const val = localStorage.getItem(key);
-      if (val) {
-        if (val.includes('Alex') || val.includes('alex')) {
-          const cleaned = val.replace(/Alex/g, 'Wesley').replace(/alex/g, 'wesley');
-          localStorage.setItem(key, cleaned);
-        }
-      }
-    });
-  }, []);
-
   // UI Navigation & Modals State
   const [activeTab, setActiveTab] = useState<string>(() => getTabFromURL());
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
@@ -337,39 +324,51 @@ export default function App() {
     );
   };
 
-  const handleUpdateTaskStatus = (searchTitleOrId: string, status: TaskStatus) => {
-    setTasks((prev) => {
-      if (!searchTitleOrId) return prev;
-      const lower = searchTitleOrId.toLowerCase().trim();
-      const target = prev.find(
-        (t) => t.id === searchTitleOrId || t.titulo.toLowerCase().includes(lower) || lower.includes(t.titulo.toLowerCase())
-      );
-      if (!target) return prev;
-      return prev.map((t) =>
-        t.id === target.id
+  const handleUpdateTaskStatus = (searchTitleOrId: string, status: TaskStatus): boolean => {
+    const query = searchTitleOrId?.trim().toLocaleLowerCase();
+    if (!query) return false;
+
+    const exact = tasks.find(
+      (task) => task.id === searchTitleOrId || task.titulo.trim().toLocaleLowerCase() === query
+    );
+    const matches = tasks.filter(
+      (task) => task.titulo.toLocaleLowerCase().includes(query) || query.includes(task.titulo.toLocaleLowerCase())
+    );
+    const target = exact || (matches.length === 1 ? matches[0] : undefined);
+    if (!target) return false;
+
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === target.id
           ? {
-              ...t,
+              ...task,
               status,
               concluida: status === 'concluida',
-              dataConclusao: status === 'concluida' ? new Date().toISOString().split('T')[0] : t.dataConclusao,
+              dataConclusao: status === 'concluida' ? new Date().toISOString().split('T')[0] : task.dataConclusao,
             }
-          : t
-      );
-    });
+          : task
+      )
+    );
+    return true;
   };
 
-  const handleRescheduleTask = (searchTitleOrId: string, newDate: string) => {
-    setTasks((prev) => {
-      if (!searchTitleOrId) return prev;
-      const lower = searchTitleOrId.toLowerCase().trim();
-      const target = prev.find(
-        (t) => t.id === searchTitleOrId || t.titulo.toLowerCase().includes(lower) || lower.includes(t.titulo.toLowerCase())
-      );
-      if (!target) return prev;
-      return prev.map((t) =>
-        t.id === target.id ? { ...t, data: newDate, status: 'adiada' } : t
-      );
-    });
+  const handleRescheduleTask = (searchTitleOrId: string, newDate: string): boolean => {
+    const query = searchTitleOrId?.trim().toLocaleLowerCase();
+    if (!query || !/^\\d{4}-\\d{2}-\\d{2}$/.test(newDate)) return false;
+
+    const exact = tasks.find(
+      (task) => task.id === searchTitleOrId || task.titulo.trim().toLocaleLowerCase() === query
+    );
+    const matches = tasks.filter(
+      (task) => task.titulo.toLocaleLowerCase().includes(query) || query.includes(task.titulo.toLocaleLowerCase())
+    );
+    const target = exact || (matches.length === 1 ? matches[0] : undefined);
+    if (!target) return false;
+
+    setTasks((prev) =>
+      prev.map((task) => task.id === target.id ? { ...task, data: newDate, status: 'adiada' } : task)
+    );
+    return true;
   };
 
   const handleDeleteTask = (idOrTitle: string) => {
