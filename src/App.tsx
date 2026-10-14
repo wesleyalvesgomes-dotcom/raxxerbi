@@ -139,15 +139,23 @@ export default function App() {
   // Keep daily history updated with real current task counts for today
   useEffect(() => {
     const todayStr = getSaoPauloDateString();
-    const dayName = new Date().toLocaleDateString('pt-BR', { weekday: 'long' });
+    const dayName = getSaoPauloWeekday();
     const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
 
-    const created = tasks.length;
-    const concluidas = tasks.filter((t) => t.concluida || t.status === 'concluida').length;
-    const pendentes = tasks.filter((t) => !t.concluida && t.status !== 'cancelada' && t.status !== 'adiada').length;
-    const adiadas = tasks.filter((t) => t.status === 'adiada').length;
-    const canceladas = tasks.filter((t) => t.status === 'cancelada').length;
-    const percentualExecucao = created > 0 ? Math.round((concluidas / created) * 100) : 0;
+    const created = tasks.filter((task) => task.dataCriacao === todayStr).length;
+    const concluidas = tasks.filter((task) => task.dataConclusao === todayStr).length;
+    const tarefasPlanejadasHoje = tasks.filter((task) => task.data === todayStr && task.status !== 'cancelada');
+    const pendentes = tarefasPlanejadasHoje.filter(
+      (task) => !task.concluida && task.status !== 'concluida' && task.status !== 'adiada'
+    ).length;
+    const adiadas = tasks.filter((task) => task.dataCriacao === todayStr && task.status === 'adiada').length;
+    const canceladas = tasks.filter((task) => task.dataCriacao === todayStr && task.status === 'cancelada').length;
+    const concluidasPlanejadasHoje = tarefasPlanejadasHoje.filter(
+      (task) => task.concluida || task.status === 'concluida'
+    ).length;
+    const percentualExecucao = tarefasPlanejadasHoje.length > 0
+      ? Math.round((concluidasPlanejadasHoje / tarefasPlanejadasHoje.length) * 100)
+      : 0;
 
     const todayLog: DailyHistoryLog = {
       data: todayStr,
