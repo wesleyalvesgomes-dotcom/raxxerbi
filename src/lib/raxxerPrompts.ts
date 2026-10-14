@@ -178,11 +178,12 @@ O usuário concluiu o cadastro inicial do RAXXER Secretário. Aqui estão suas p
 - Dificuldade na Organização: ${profileAnswers.dificuldades || ''}
 - Objetivos Pessoais & Família: ${profileAnswers.metasProximas || ''}
 
-Gere uma estrutura inicial para o RAXXER contendo:
-1. Memórias pessoais iniciais (identidade, saude, financas, relacoes, metas).
-2. Metas pessoais estruturadas.
-3. NENHUMA tarefa automática genérica. Apenas boas-vindas do seu novo Secretário Pessoal.
-4. Uma análise de boas-vindas sintetizando que você está pronto para agir como secretário executivo pessoal do Wesley.
+Gere uma resposta inicial estritamente baseada nas respostas fornecidas, sem completar lacunas por inferência:
+1. Crie memórias somente para fatos explicitamente informados nas respostas; não deduza saúde, finanças, relações ou preferências.
+2. O campo goals deve conter apenas metas que o usuário declarou explicitamente em "metasProximas" ou "metasLongoPrazo". Não transforme dificuldades, prioridades genéricas ou desejos vagos em novas metas. Se não houver uma meta explícita, retorne [].
+3. O campo tasks deve ser sempre []. Nunca crie tarefas, hábitos, próximos passos ou compromissos durante o onboarding.
+4. Se proximosPassos não foram explicitamente informados, retorne uma lista vazia; não invente etapas.
+5. Faça uma mensagem de boas-vindas breve para o secretário pessoal, sem afirmar que alguma ação foi registrada.
 `;
 }
 
