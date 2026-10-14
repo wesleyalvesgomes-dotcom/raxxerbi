@@ -40,6 +40,7 @@ import {
   INITIAL_TASKS,
   INITIAL_WEEKLY_REVIEWS,
 } from './utils/initialData';
+import { getSaoPauloDateString, getSaoPauloWeekday } from './utils/date';
 
 // Helper to sanitize local storage data and strip legacy seed or "Alex" references
 const getSanitizedLocalStorage = <T,>(key: string, fallback: T): T => {
