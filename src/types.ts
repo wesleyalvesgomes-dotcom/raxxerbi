@@ -110,16 +110,28 @@ export interface UserProfile {
 }
 
 export type AIChatActionType =
-  | 'create_task'
+  | 'add_task'
   | 'update_task_status'
   | 'reschedule_task'
-  | 'delete_task'
-  | 'create_goal'
+  | 'add_goal'
   | 'add_memory';
 
 export interface AIChatAction {
   type: AIChatActionType;
-  payload: any;
+  titulo?: string;
+  descricao?: string;
+  data?: string;
+  horarioSugerido?: string;
+  tempoEstimadoMinutos?: number;
+  prioridade?: TaskPriority;
+  categoria?: MemoryCategory | string;
+  importancia?: MemoryImportance;
+  conteudo?: string;
+  searchTitleOrId?: string;
+  status?: TaskStatus;
+  newDate?: string;
+  area?: string;
+  prazo?: string;
 }
 
 export interface AIChatMessage {
