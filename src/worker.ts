@@ -69,7 +69,7 @@ const DATA_COLLECTIONS = new Set([
   'commercial_sales',
   'commercial_goals',
 ]);
-let jwksCache: { expiresAt: number; keys: JsonWebKey[] } | undefined;
+let jwksCache: { domain: string; expiresAt: number; keys: JsonWebKey[] } | undefined;
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -94,7 +94,7 @@ function decodeJwtPart<T>(value: string): T {
 }
 
 async function getAccessKeys(domain: string): Promise<JsonWebKey[]> {
-  if (jwksCache && jwksCache.expiresAt > Date.now()) return jwksCache.keys;
+  if (jwksCache && jwksCache.domain === domain && jwksCache.expiresAt > Date.now()) return jwksCache.keys;
 
   const response = await fetch(`https://${domain}/cdn-cgi/access/certs`);
   if (!response.ok) throw new Error('Não foi possível validar as chaves do Cloudflare Access.');
@@ -104,7 +104,7 @@ async function getAccessKeys(domain: string): Promise<JsonWebKey[]> {
     throw new Error('O endpoint de chaves do Cloudflare Access retornou dados inválidos.');
   }
 
-  jwksCache = { keys: data.keys, expiresAt: Date.now() + 5 * 60 * 1000 };
+  jwksCache = { domain, keys: data.keys, expiresAt: Date.now() + 5 * 60 * 1000 };
   return data.keys;
 }
 
