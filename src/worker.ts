@@ -13,7 +13,7 @@ import {
 
 interface D1Statement {
   bind(...values: unknown[]): D1Statement;
-  run(): Promise<unknown>;
+  first<T = Record<string, unknown>>(): Promise<T | null>;
 }
 
 interface D1Database {
@@ -148,16 +148,18 @@ async function verifyAccessIdentity(request: Request, env: Env): Promise<Authent
   }
 }
 
-async function persistAuthenticatedUser(db: D1Database, user: AuthenticatedUser): Promise<void> {
-  await db.prepare(
+async function persistAuthenticatedUser(db: D1Database, user: AuthenticatedUser): Promise<boolean> {
+  const result = await db.prepare(
     `INSERT INTO users (id, email, display_name, updated_at)
      VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
      ON CONFLICT(id) DO UPDATE SET
        email = excluded.email,
        display_name = excluded.display_name,
        updated_at = excluded.updated_at
-     WHERE users.disabled_at IS NULL`
-  ).bind(user.id, user.email.toLowerCase(), user.name).run();
+     WHERE users.disabled_at IS NULL
+     RETURNING id`
+  ).bind(user.id, user.email.toLowerCase(), user.name).first<{ id: string }>();
+  return Boolean(result?.id);
 }
 
 export default {
@@ -187,7 +189,10 @@ export default {
       }
 
       try {
-        await persistAuthenticatedUser(env.DB, user);
+        const activeUser = await persistAuthenticatedUser(env.DB, user);
+        if (!activeUser) {
+          return jsonResponse({ error: 'Esta conta não está autorizada a acessar o RAXXER.' }, 403);
+        }
       } catch (error) {
         console.error('Falha ao registrar identidade autenticada no D1:', error);
         return jsonResponse({ error: 'Não foi possível confirmar a identidade no banco de dados.' }, 503);
