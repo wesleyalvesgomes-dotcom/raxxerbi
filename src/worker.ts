@@ -68,6 +68,7 @@ const DATA_COLLECTIONS = new Set([
   'commercial_proposals',
   'commercial_sales',
   'commercial_goals',
+  'scheduled_outputs',
 ]);
 let jwksCache: { domain: string; expiresAt: number; keys: JsonWebKey[] } | undefined;
 
@@ -180,7 +181,143 @@ async function persistAuthenticatedUser(db: D1Database, user: AuthenticatedUser)
   return Boolean(result?.id);
 }
 
+
+
+type ScheduledJob = {
+  id: string;
+  user_id: string;
+  job_type: 'daily_briefing' | 'weekly_review';
+  payload_json: string;
+  status: string;
+  run_at: string;
+  attempt_count: number;
+  idempotency_key: string;
+};
+
+function saoPauloDate(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+async function readUserCollection(db: D1Database, userId: string, collection: string): Promise<any[]> {
+  const rows = await db.prepare(
+    'SELECT data_json FROM user_data WHERE user_id = ? AND collection = ? ORDER BY item_id ASC'
+  ).bind(userId, collection).all<{ data_json: string }>();
+  return rows.results.map((row) => JSON.parse(row.data_json));
+}
+
+async function createScheduledOutput(db: D1Database, job: ScheduledJob): Promise<void> {
+  const [tasks, goals] = await Promise.all([
+    readUserCollection(db, job.user_id, 'tasks'),
+    readUserCollection(db, job.user_id, 'goals'),
+  ]);
+  const today = saoPauloDate();
+  const activeTasks = tasks.filter((task) => task && task.status !== 'cancelada' && task.status !== 'concluida' && !task.concluida);
+  const dueToday = activeTasks.filter((task) => task.data === today);
+  const overdue = activeTasks.filter((task) => typeof task.data === 'string' && task.data < today);
+  const activeGoals = goals.filter((goal) => goal && goal.status !== 'concluido');
+  const isWeekly = job.job_type === 'weekly_review';
+  const lines = isWeekly
+    ? [
+        'Resumo baseado somente nos registros existentes no RAXXER.',
+        'Tarefas em aberto: ' + activeTasks.length,
+        'Tarefas com data anterior a hoje: ' + overdue.length,
+        'Metas em andamento: ' + activeGoals.length,
+      ]
+    : [
+        'Resumo baseado somente nos registros existentes no RAXXER.',
+        'Tarefas previstas para hoje ainda abertas: ' + dueToday.length,
+        'Tarefas com data anterior a hoje ainda abertas: ' + overdue.length,
+        'Metas em andamento: ' + activeGoals.length,
+      ];
+  const output = {
+    id: job.id,
+    jobId: job.id,
+    type: job.job_type,
+    title: isWeekly ? 'Revisão semanal automática' : 'Resumo diário automático',
+    createdAt: new Date().toISOString(),
+    date: today,
+    summary: lines.join('\n'),
+    stats: { openTasks: activeTasks.length, dueToday: dueToday.length, overdueTasks: overdue.length, activeGoals: activeGoals.length },
+    source: 'scheduled_job',
+  };
+  await db.prepare(
+    `INSERT INTO user_data (user_id, collection, item_id, data_json, updated_at)
+     VALUES (?, 'scheduled_outputs', ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+     ON CONFLICT(user_id, collection, item_id) DO UPDATE SET
+       data_json = excluded.data_json, updated_at = excluded.updated_at`
+  ).bind(job.user_id, job.id, JSON.stringify(output)).run();
+}
+
+export async function processDueJobs(db: D1Database, now = new Date()): Promise<{ completed: number; retried: number; failed: number }> {
+  const nowIso = now.toISOString();
+  const staleBefore = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
+  const due = await db.prepare(
+    `SELECT id, user_id, job_type, payload_json, status, run_at, attempt_count, idempotency_key
+     FROM scheduled_jobs
+     WHERE (status = 'pending' AND run_at <= ?)
+        OR (status = 'running' AND updated_at <= ?)
+     ORDER BY run_at ASC LIMIT 25`
+  ).bind(nowIso, staleBefore).all<ScheduledJob>();
+  const stats = { completed: 0, retried: 0, failed: 0 };
+
+  for (const candidate of due.results) {
+    const claimed = await db.prepare(
+      `UPDATE scheduled_jobs
+       SET status = 'running', attempt_count = attempt_count + 1,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       WHERE id = ? AND ((status = 'pending' AND run_at <= ?) OR (status = 'running' AND updated_at <= ?))
+       RETURNING id, user_id, job_type, payload_json, status, run_at, attempt_count, idempotency_key`
+    ).bind(candidate.id, nowIso, staleBefore).first<ScheduledJob>();
+    if (!claimed) continue;
+
+    try {
+      if (claimed.job_type !== 'daily_briefing' && claimed.job_type !== 'weekly_review') {
+        throw new Error('Tipo de trabalho não permitido.');
+      }
+      await createScheduledOutput(db, claimed);
+      await db.prepare(
+        `UPDATE scheduled_jobs SET status = 'completed', last_error = NULL,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND status = 'running'`
+      ).bind(claimed.id).run();
+      await db.prepare(
+        `INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, outcome, details_json)
+         VALUES (?, ?, 'scheduled_job_completed', 'scheduled_job', ?, 'success', ?)`
+      ).bind(crypto.randomUUID(), claimed.user_id, claimed.id, JSON.stringify({ type: claimed.job_type })).run();
+      stats.completed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message.slice(0, 300) : 'Erro desconhecido';
+      if (claimed.attempt_count < 3) {
+        const delayMinutes = claimed.attempt_count === 1 ? 1 : 5;
+        const retryAt = new Date(now.getTime() + delayMinutes * 60 * 1000).toISOString();
+        await db.prepare(
+          `UPDATE scheduled_jobs SET status = 'pending', run_at = ?, last_error = ?,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND status = 'running'`
+        ).bind(retryAt, message, claimed.id).run();
+        stats.retried += 1;
+      } else {
+        await db.prepare(
+          `UPDATE scheduled_jobs SET status = 'failed', last_error = ?,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND status = 'running'`
+        ).bind(message, claimed.id).run();
+        stats.failed += 1;
+      }
+      await db.prepare(
+        `INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, outcome, details_json)
+         VALUES (?, ?, 'scheduled_job_failed', 'scheduled_job', ?, 'failure', ?)`
+      ).bind(crypto.randomUUID(), claimed.user_id, claimed.id, JSON.stringify({ type: claimed.job_type, attempt: claimed.attempt_count, error: message })).run();
+    }
+  }
+  return stats;
+}
+
 export default {
+  async scheduled(_event: { scheduledTime: number; cron: string }, env: Env): Promise<void> {
+    if (!env.DB) throw new Error('D1 não configurado para executar trabalhos agendados.');
+    await processDueJobs(env.DB);
+  },
+
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
@@ -221,6 +358,73 @@ export default {
           return jsonResponse({ error: 'Método não permitido. Utilize GET.' }, 405);
         }
         return jsonResponse({ user: { id: user.id, email: user.email, name: user.name } });
+      }
+
+      if (url.pathname === '/api/jobs') {
+        if (request.method === 'GET') {
+          try {
+            const jobs = await env.DB.prepare(
+              'SELECT id, job_type, status, run_at, attempt_count, last_error, created_at, updated_at FROM scheduled_jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 100'
+            ).bind(user.id).all();
+            return jsonResponse({ jobs: jobs.results });
+          } catch (error) {
+            console.error('Falha ao listar trabalhos agendados:', error);
+            return jsonResponse({ error: 'Não foi possível consultar os trabalhos agendados.' }, 503);
+          }
+        }
+        if (request.method === 'POST') {
+          let body: any;
+          try { body = await request.json(); } catch { return jsonResponse({ error: 'JSON inválido.' }, 400); }
+          const jobType = body?.type;
+          const runAt = typeof body?.runAt === 'string' ? new Date(body.runAt) : null;
+          const idempotencyKey = typeof body?.idempotencyKey === 'string' ? body.idempotencyKey.trim() : '';
+          if (jobType !== 'daily_briefing' && jobType !== 'weekly_review') {
+            return jsonResponse({ error: 'Tipo inválido. Use daily_briefing ou weekly_review.' }, 400);
+          }
+          if (!runAt || !Number.isFinite(runAt.getTime()) || runAt.getTime() < Date.now() + 60_000 || runAt.getTime() > Date.now() + 366 * 24 * 60 * 60 * 1000) {
+            return jsonResponse({ error: 'A execução deve ser agendada entre 1 minuto e 366 dias a partir de agora.' }, 400);
+          }
+          if (!idempotencyKey || idempotencyKey.length > 160) {
+            return jsonResponse({ error: 'Informe uma chave de idempotência de até 160 caracteres.' }, 400);
+          }
+          const id = crypto.randomUUID();
+          try {
+            const existing = await env.DB.prepare(
+              'SELECT id, job_type, status, run_at FROM scheduled_jobs WHERE user_id = ? AND idempotency_key = ?'
+            ).bind(user.id, idempotencyKey).first();
+            if (existing) return jsonResponse({ job: existing, reused: true });
+            await env.DB.prepare(
+              `INSERT INTO scheduled_jobs (id, user_id, job_type, payload_json, status, run_at, idempotency_key)
+               VALUES (?, ?, ?, '{}', 'pending', ?, ?)`
+            ).bind(id, user.id, jobType, runAt.toISOString(), idempotencyKey).run();
+            await env.DB.prepare(
+              `INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, outcome, details_json)
+               VALUES (?, ?, 'scheduled_job_created', 'scheduled_job', ?, 'success', ?)`
+            ).bind(crypto.randomUUID(), user.id, id, JSON.stringify({ type: jobType, runAt: runAt.toISOString() })).run();
+            return jsonResponse({ job: { id, type: jobType, status: 'pending', runAt: runAt.toISOString() } }, 201);
+          } catch (error) {
+            console.error('Falha ao criar trabalho agendado:', error);
+            return jsonResponse({ error: 'Não foi possível agendar este trabalho.' }, 503);
+          }
+        }
+        return jsonResponse({ error: 'Método não permitido. Utilize GET ou POST.' }, 405);
+      }
+
+      if (url.pathname.startsWith('/api/jobs/') && request.method === 'DELETE') {
+        const id = decodeURIComponent(url.pathname.slice('/api/jobs/'.length));
+        if (!id || id.length > 200) return jsonResponse({ error: 'Identificador inválido.' }, 400);
+        try {
+          const result = await env.DB.prepare(
+            `UPDATE scheduled_jobs SET status = 'cancelled',
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE user_id = ? AND id = ? AND status = 'pending'`
+          ).bind(user.id, id).run() as { meta?: { changes?: number } };
+          if (!result.meta?.changes) return jsonResponse({ error: 'Trabalho não encontrado ou não pode mais ser cancelado.' }, 404);
+          return jsonResponse({ ok: true, id });
+        } catch (error) {
+          console.error('Falha ao cancelar trabalho agendado:', error);
+          return jsonResponse({ error: 'Não foi possível cancelar o trabalho.' }, 503);
+        }
       }
 
       // User-scoped storage API used for gradual, non-destructive localStorage migration.
