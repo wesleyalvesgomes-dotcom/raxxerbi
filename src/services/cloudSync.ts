@@ -4,6 +4,7 @@ type VersionMap = Record<string, Record<string, string>>;
 type SyncConflict = { key: string; collection: string; id: string; detectedAt: string };
 
 export const CLOUD_SYNC_ENABLED_KEY = 'raxxer_cloud_sync_enabled_v1';
+export const CLOUD_SYNC_PENDING_ACTIVATION_KEY = 'raxxer_cloud_sync_pending_activation_v1';
 export const CLOUD_SYNC_VERSIONS_KEY = 'raxxer_cloud_sync_versions_v1';
 export const CLOUD_SYNC_ERROR_KEY = 'raxxer_cloud_sync_last_error_v1';
 export const CLOUD_SYNC_CONFLICTS_KEY = 'raxxer_cloud_sync_conflicts_v1';
@@ -184,6 +185,10 @@ async function flushChanges(key?: string): Promise<void> {
 /** Call once after initial localStorage hydration. Later local writes sync with optimistic concurrency. */
 export function initializeCloudSync(): () => void {
   if (typeof window === 'undefined' || listenerAttached) return () => undefined;
+  if (localStorage.getItem(CLOUD_SYNC_PENDING_ACTIVATION_KEY) === 'true') {
+    localStorage.setItem(CLOUD_SYNC_ENABLED_KEY, 'true');
+    localStorage.removeItem(CLOUD_SYNC_PENDING_ACTIVATION_KEY);
+  }
   for (const mapping of CLOUD_STORAGE_MAPPINGS) {
     try { previous.set(mapping.key, serializeRecords(mapping)); }
     catch { previous.set(mapping.key, new Map()); }
