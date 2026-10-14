@@ -103,7 +103,7 @@ test('valid Access identity scopes D1 collection reads to the verified subject',
   const db = {
     prepare(sql: string) {
       let values: unknown[] = [];
-      const statement = {
+      const statement: any = {
         bind(...bound: unknown[]) {
           values = bound;
           return statement;
