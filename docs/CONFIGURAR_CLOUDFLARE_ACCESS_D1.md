@@ -61,10 +61,12 @@ A interface oferece **Dados e backup** no canto inferior. A sincronização é m
 
 - Exportar backup gera um JSON com as chaves locais suportadas. O arquivo contém dados pessoais e comerciais; proteja-o.
 - Sincronizar verifica a identidade em `/api/me`, envia apenas registros ausentes na nuvem e importa registros que faltam localmente.
-- Em caso de conflito de ID, os dois lados não são sobrescritos: o registro local continua local e o remoto continua remoto.
+- Ao concluir, a ativação da sincronização contínua fica pendente até recarregar a aplicação, para inicializar o estado React com os dados mesclados antes de voltar a enviar alterações.
+- Em caso de conflito de ID na migração, os dois lados não são sobrescritos: o registro local continua local e o remoto continua remoto.
+- Depois da ativação, alterações locais são enviadas automaticamente. Cada item usa versão otimista (`updatedAt`) para bloquear gravações/exclusões se o registro remoto mudou desde a última sincronização; conflitos são registrados localmente e não sobrescrevem o remoto.
 - IDs conhecidos de dados-semente antigos (padrões `task-1`, `goal-1`, `proj-1`, `mem-1`, `review-1`) não são enviados como registros reais.
 - A sincronização cobre perfil, tarefas, metas, memórias, projetos, histórico diário, revisões semanais e coleções do BI comercial.
-- Após sincronizar, use **Recarregar aplicação** para que o estado React carregue os registros recém-importados.
+- Após sincronizar, use **Recarregar aplicação** para carregar os registros recém-importados e ativar a sincronização contínua.
 
 ## Execução agendada
 
