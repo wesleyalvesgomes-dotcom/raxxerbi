@@ -25,8 +25,8 @@ interface AIChatDrawerProps {
   initialPrompt?: string;
   onAddMemory: (memory: Omit<MemoryItem, 'id' | 'data'>) => void;
   onAddTask?: (task: Omit<TaskItem, 'id' | 'data'> & { data?: string }) => void;
-  onUpdateTaskStatus?: (searchTitleOrId: string, status: TaskStatus) => void;
-  onRescheduleTask?: (searchTitleOrId: string, newDate: string) => void;
+  onUpdateTaskStatus?: (searchTitleOrId: string, status: TaskStatus) => boolean;
+  onRescheduleTask?: (searchTitleOrId: string, newDate: string) => boolean;
   onDeleteTask?: (searchTitleOrId: string) => void;
   onAddGoal?: (goal: Omit<GoalItem, 'id' | 'dataCriacao'>) => void;
 }
@@ -122,6 +122,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
       const data = await response.json();
 
       // Executar ações de mutação retornadas pela IA
+      let actionWarning: string | null = null;
       if (data.actions && Array.isArray(data.actions)) {
         data.actions.forEach((act: any) => {
           switch (act.type) {
@@ -157,7 +158,8 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
                 typeof act.searchTitleOrId === 'string' && act.searchTitleOrId.trim() &&
                 ['pendente', 'em_andamento', 'concluida', 'adiada', 'cancelada'].includes(act.status)
               ) {
-                onUpdateTaskStatus(act.searchTitleOrId, act.status);
+                const applied = onUpdateTaskStatus(act.searchTitleOrId, act.status);
+                if (!applied) actionWarning = 'Não alterei a tarefa: não encontrei um único registro correspondente. Informe o título exato.';
               }
               break;
 
@@ -167,7 +169,8 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
                 typeof act.searchTitleOrId === 'string' && act.searchTitleOrId.trim() &&
                 typeof act.newDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(act.newDate)
               ) {
-                onRescheduleTask(act.searchTitleOrId, act.newDate);
+                const applied = onRescheduleTask(act.searchTitleOrId, act.newDate);
+                if (!applied) actionWarning = 'Não reagendei a tarefa: não encontrei um único registro correspondente. Informe o título exato.';
               }
               break;
 
@@ -197,7 +200,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
       const aiMsg: AIChatMessage = {
         id: `ai-${Date.now()}`,
         sender: 'ai',
-        text: data.text || 'Anotei.',
+        text: actionWarning || data.text || 'Anotei.',
         timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       };
 
