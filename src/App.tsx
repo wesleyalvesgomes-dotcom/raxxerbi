@@ -272,33 +272,7 @@ export default function App() {
         setMemories(newMems);
       }
 
-      if (aiGeneratedData.goals && aiGeneratedData.goals.length > 0) {
-        const newGoals: GoalItem[] = aiGeneratedData.goals.map((g: any, idx: number) => ({
-          id: `goal-ai-${Date.now()}-${idx}`,
-          objetivo: g.objetivo,
-          prazo: g.prazo || '2026-12-31',
-          progresso: g.progresso || 10,
-          proximosPassos: g.proximosPassos || ['Começar primeiro passo'],
-          categoria: (g.categoria as MemoryCategory) || 'metas',
-          dataCriacao: getSaoPauloDateString(),
-          status: 'em_andamento',
-        }));
-        setGoals(newGoals);
-      }
 
-      if (aiGeneratedData.tasks && aiGeneratedData.tasks.length > 0) {
-        const newTasks: TaskItem[] = aiGeneratedData.tasks.map((t: any, idx: number) => ({
-          id: `task-ai-${Date.now()}-${idx}`,
-          titulo: t.titulo,
-          prioridade: (t.prioridade as TaskPriority) || 'importante',
-          status: 'pendente',
-          concluida: false,
-          data: getSaoPauloDateString(),
-          categoria: (t.categoria as MemoryCategory) || 'projetos',
-          dataCriacao: getSaoPauloDateString(),
-        }));
-        setTasks(newTasks);
-      }
     }
 
     setActiveTab('dashboard');
