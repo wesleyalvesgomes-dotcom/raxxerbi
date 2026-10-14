@@ -17,17 +17,17 @@ REGRAS DE COMPORTAMENTO DO SECRETÁRIO RAXXER:
    - Você SÓ crie, sugira ou registre algo quando o usuário informar ou pedir explicitamente na conversa ou cadastro.
 
 2. SEPARAÇÃO E TIPO DE INFORMAÇÃO:
-   - Tarefa: Algo que precisa ser feito ("Preciso pagar uma conta", "Comprar papel"). -> Gerar ação 'create_task'.
-   - Compromisso: Algo com data ou horário ("Tenho consulta terça às 14h"). -> Gerar ação 'create_task' com data e horário.
+   - Tarefa: Algo que precisa ser feito ("Preciso pagar uma conta", "Comprar papel"). -> Gerar ação 'add_task'.
+   - Compromisso: Algo com data ou horário ("Tenho consulta terça às 14h"). -> Gerar ação 'add_task' com data e horário.
    - Memória: Uma informação importante para lembrar ("Meu filho começa as aulas em fevereiro"). -> Gerar ação 'add_memory'.
    - Decisão: Algo que o usuário escolheu ("Decidi viajar em dezembro"). -> Gerar ação 'add_memory' ou 'create_goal'.
 
 3. INTERPRETAÇÃO E EXECUÇÃO DE COMANDOS (AÇÕES JSON):
-   - Criar tarefa: 'create_task' (payload: titulo, data, horario, prioridade, categoria).
-   - Concluir tarefa: 'update_task_status' (payload: searchTitle, status: 'concluida').
-   - Alterar/Reagendar data da tarefa: 'reschedule_task' (payload: searchTitle, data em YYYY-MM-DD).
-   - Cancelar tarefa: 'update_task_status' (payload: searchTitle, status: 'cancelada') ou 'delete_task'.
-   - Guardar memória/informação: 'add_memory' (payload: titulo, conteudo, categoria, importancia).
+   - Criar tarefa: 'add_task' (campos diretos: titulo, data, horarioSugerido, prioridade, categoria).
+   - Concluir tarefa: 'update_task_status' (campos diretos: searchTitleOrId, status: 'concluida').
+   - Alterar/Reagendar data da tarefa: 'reschedule_task' (campos diretos: searchTitleOrId, newDate em YYYY-MM-DD).
+   - Cancelar tarefa: 'update_task_status' (campos diretos: searchTitleOrId, status: 'cancelada'). Nunca apague uma tarefa para cancelá-la.
+   - Guardar memória/informação: 'add_memory' (campos diretos: titulo, conteudo, categoria, importancia).
 
 4. PADRÃO RESPOSTAS DO CHAT (OBJETIVO E DIRETO):
    - Ao criar tarefa:
@@ -271,43 +271,35 @@ Apresente um balanço executivo fiel contendo:
 export const CHAT_RESPONSE_SCHEMA = {
   type: 'OBJECT',
   properties: {
-    text: {
-      type: 'STRING',
-      description: 'A resposta do Secretário RAXXER para o Wesley (educada, polida, eficiente).',
-    },
+    text: { type: 'STRING', description: 'Resposta objetiva do Secretário RAXXER.' },
     actions: {
       type: 'ARRAY',
-      description: 'Lista de ações no banco de dados do aplicativo executadas pela conversa.',
+      description: 'Ações estruturadas. Campos diretamente no objeto, nunca dentro de payload.',
       items: {
         type: 'OBJECT',
         properties: {
-          type: {
-            type: 'STRING',
-            description: 'Tipo: create_task, update_task_status, reschedule_task, delete_task, create_goal, add_memory',
-          },
-          payload: {
-            type: 'OBJECT',
-            properties: {
-              id: { type: 'STRING' },
-              titulo: { type: 'STRING' },
-              descricao: { type: 'STRING' },
-              data: { type: 'STRING', description: 'Data em formato YYYY-MM-DD' },
-              horario: { type: 'STRING', description: 'Horário HH:mm se mencionado' },
-              prioridade: { type: 'STRING', description: 'urgente, importante, pode_esperar' },
-              status: { type: 'STRING', description: 'pendente, em_andamento, concluida, adiada, cancelada' },
-              categoria: { type: 'STRING' },
-              searchTitle: { type: 'STRING', description: 'Texto da tarefa existente mencionada' },
-              conteudo: { type: 'STRING' },
-            },
-          },
+          type: { type: 'STRING', description: 'add_task, update_task_status, reschedule_task, add_memory ou add_goal.' },
+          titulo: { type: 'STRING' },
+          descricao: { type: 'STRING' },
+          data: { type: 'STRING', description: 'Data YYYY-MM-DD quando informada pelo usuário.' },
+          horarioSugerido: { type: 'STRING', description: 'Horário HH:mm somente quando informado.' },
+          tempoEstimadoMinutos: { type: 'NUMBER' },
+          prioridade: { type: 'STRING', description: 'Prioridade compatível com o aplicativo.' },
+          categoria: { type: 'STRING' },
+          importancia: { type: 'STRING' },
+          conteudo: { type: 'STRING' },
+          searchTitleOrId: { type: 'STRING', description: 'Nome ou ID da tarefa já cadastrada.' },
+          status: { type: 'STRING', description: 'pendente, em_andamento, concluida, adiada ou cancelada.' },
+          newDate: { type: 'STRING', description: 'Nova data YYYY-MM-DD.' },
+          area: { type: 'STRING' },
+          prazo: { type: 'STRING' },
         },
-        required: ['type', 'payload'],
+        required: ['type'],
       },
     },
   },
-  required: ['text'],
+  required: ['text', 'actions'],
 };
-
 export function buildChatPrompt({
   message,
   profile,
@@ -341,17 +333,17 @@ Contexto dos Dados:
 
 Histórico Recente da Conversa:
 ${(chatHistory || [])
-  .map((m: any) => `${m.sender === 'user' ? profile?.comoSerChamado || 'Wesley' : 'RAXXER'}: ${m.text}`)
+  .map((m: any) => `${m.role === 'user' ? profile?.comoSerChamado || 'Wesley' : 'RAXXER'}: ${m.text}`)
   .join('\n')}
 
 Mensagem do Usuário: "${message}"
 
 REGRAS DE PROCESSAMENTO E RESPOSTA DO SECRETÁRIO RAXXER:
-1. INTERPRETAÇÃO DE INTENÇÃO:
-   - Criando tarefa: se o usuário disser "preciso...", "amanhã tenho que...", "lembrar de...". -> action 'create_task'
+1. INTERPRETAÇÃO DE INTENÇÃO. Cada ação deve ter 'type' e campos diretamente no mesmo nível; nunca use 'payload'. Use somente add_task, update_task_status, reschedule_task, add_memory ou add_goal:
+   - Criando tarefa: se o usuário disser "preciso...", "amanhã tenho que...", "lembrar de...". -> action 'add_task'
    - Concluindo tarefa: se o usuário disser "já paguei...", "fiz...", "concluí...", "terminado". -> action 'update_task_status' (status: 'concluida')
    - Adiando/Reagendando tarefa: "deixa para sexta", "passa para amanhã", "mudar data". -> action 'reschedule_task' (data em YYYY-MM-DD calculada a partir de ${todayStr})
-   - Cancelando tarefa: "não vou fazer mais", "cancela...", "exclui...". -> action 'update_task_status' (status: 'cancelada') ou 'delete_task'
+   - Cancelando tarefa: "não vou fazer mais", "cancela...", "exclui...". -> action 'update_task_status' (status: 'cancelada') Não use exclusão permanente; marque como cancelada.
    - Registrando informação/fato (Memória): "meu filho...", "decidi viajar...", "o número do contrato é...". -> action 'add_memory'
 
 2. REGRA ABSOLUTA - NÃO INVENTAR TAREFAS E NÃO JULGAR:
@@ -375,7 +367,7 @@ REGRAS DE PROCESSAMENTO E RESPOSTA DO SECRETÁRIO RAXXER:
      - Terça-feira: [percentual]% concluído.
      - Quarta-feira: [percentual]% concluído."
 
-5. CONFIRMAÇÕES DE AÇÃO:
+5. SEGURANÇA DE EXECUÇÃO: só emita uma ação de alteração quando a intenção e o registro-alvo estiverem claros. Para concluir, cancelar ou reagendar, preencha searchTitleOrId com o nome/ID da tarefa existente. Se houver ambiguidade, faça uma pergunta e retorne actions como []. Não invente títulos, datas ou informações ausentes. Nunca emita delete_task.\n\n6. CONFIRMAÇÕES DE AÇÃO:
    - Criar: "Anotei. Criei a tarefa: [nome da tarefa]."
    - Concluir: "Perfeito. Marquei como concluída: [nome da tarefa]."
    - Reagendar: "Perfeito. Reagendei a tarefa [nome] para [data]."
