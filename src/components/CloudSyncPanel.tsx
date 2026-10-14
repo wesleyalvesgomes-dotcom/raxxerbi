@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Cloud, CloudUpload, Download, RefreshCw, ShieldCheck, X } from 'lucide-react';
-import { CLOUD_SYNC_CONFLICTS_KEY, CLOUD_SYNC_ENABLED_KEY, CLOUD_SYNC_ERROR_KEY, CLOUD_SYNC_STATUS_EVENT, CLOUD_SYNC_VERSIONS_KEY } from '../services/cloudSync';
+import { CLOUD_SYNC_CONFLICTS_KEY, CLOUD_SYNC_ENABLED_KEY, CLOUD_SYNC_ERROR_KEY, CLOUD_SYNC_PENDING_ACTIVATION_KEY, CLOUD_SYNC_STATUS_EVENT, CLOUD_SYNC_VERSIONS_KEY } from '../services/cloudSync';
 
 type LocalMapping = { key: string; collection: string; shape: 'array' | 'object'; idField?: string };
 
@@ -184,6 +184,9 @@ export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =
     const stats: SyncStats = { uploaded: 0, downloaded: 0, conflicts: 0, ignored: 0 };
     let versions: Record<string, Record<string, string>> = {};
     try { versions = JSON.parse(localStorage.getItem(CLOUD_SYNC_VERSIONS_KEY) || '{}'); } catch { versions = {}; }
+    localStorage.setItem(CLOUD_SYNC_ENABLED_KEY, 'false');
+    localStorage.removeItem(CLOUD_SYNC_PENDING_ACTIVATION_KEY);
+    setAutoSyncEnabled(false);
     try {
       await requestJson('/api/me');
       for (const mapping of MAPPINGS) {
@@ -241,11 +244,12 @@ export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =
         }
       }
       localStorage.setItem(CLOUD_SYNC_VERSIONS_KEY, JSON.stringify(versions));
-      localStorage.setItem(CLOUD_SYNC_ENABLED_KEY, 'true');
+      localStorage.setItem(CLOUD_SYNC_ENABLED_KEY, 'false');
+      localStorage.setItem(CLOUD_SYNC_PENDING_ACTIVATION_KEY, 'true');
       localStorage.removeItem(CLOUD_SYNC_ERROR_KEY);
-      setAutoSyncEnabled(true);
+      setAutoSyncEnabled(false);
       setLastStats(stats);
-      setMessage('Migração concluída. A sincronização contínua está ativa; alterações futuras serão enviadas com controle de versão. Recarregue o RAXXER para exibir os dados recebidos.');
+      setMessage('Migração concluída. Recarregue o RAXXER para ativar a sincronização contínua e carregar os dados recebidos.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível sincronizar. Os dados locais foram mantidos.');
     } finally {
