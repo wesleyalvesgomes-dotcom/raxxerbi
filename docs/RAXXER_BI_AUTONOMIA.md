@@ -18,7 +18,11 @@
 3. Validação de campos mínimos antes de criar memória/tarefa/meta, alterar status ou reagendar.
 4. Bloqueio da exclusão permanente de tarefas por ação gerada pela IA; o caminho seguro é cancelar.
 5. Parada do carregamento automático de leads/metas fictícios e migração dos registros com IDs do conjunto de demonstração conhecido.
-6. Uso da data de São Paulo na interpretação de datas do chat.
+6. Uso de data de São Paulo compartilhada pelo prompt, painel, histórico diário e telas de tarefas.
+7. Remoção da reescrita global de “Alex” para “Wesley” no armazenamento local, que poderia corromper memórias legítimas.
+8. Correção dos contadores do histórico diário, que antes tratavam todas as tarefas acumuladas como atividade de hoje.
+9. Alteração de status/reagendamento somente quando existe um único alvo; caso contrário, o chat informa que não executou.
+10. Bloqueio da criação automática de tarefas e metas inferidas no onboarding.
 
 ## Plano para o RAXXER operar com autonomia
 
