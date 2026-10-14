@@ -192,6 +192,7 @@ type ScheduledJob = {
   run_at: string;
   attempt_count: number;
   idempotency_key: string;
+  recurrence: 'once' | 'daily' | 'weekly';
 };
 
 function saoPauloDate(): string {
@@ -231,8 +232,9 @@ async function createScheduledOutput(db: D1Database, job: ScheduledJob): Promise
         'Tarefas com data anterior a hoje ainda abertas: ' + overdue.length,
         'Metas em andamento: ' + activeGoals.length,
       ];
+  const outputId = job.recurrence === 'once' ? job.id : job.id + '-' + today;
   const output = {
-    id: job.id,
+    id: outputId,
     jobId: job.id,
     type: job.job_type,
     title: isWeekly ? 'Revisão semanal automática' : 'Resumo diário automático',
@@ -247,14 +249,14 @@ async function createScheduledOutput(db: D1Database, job: ScheduledJob): Promise
      VALUES (?, 'scheduled_outputs', ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
      ON CONFLICT(user_id, collection, item_id) DO UPDATE SET
        data_json = excluded.data_json, updated_at = excluded.updated_at`
-  ).bind(job.user_id, job.id, JSON.stringify(output)).run();
+  ).bind(job.user_id, outputId, JSON.stringify(output)).run();
 }
 
 export async function processDueJobs(db: D1Database, now = new Date()): Promise<{ completed: number; retried: number; failed: number }> {
   const nowIso = now.toISOString();
   const staleBefore = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
   const due = await db.prepare(
-    `SELECT id, user_id, job_type, payload_json, status, run_at, attempt_count, idempotency_key
+    `SELECT id, user_id, job_type, payload_json, status, run_at, attempt_count, idempotency_key, recurrence
      FROM scheduled_jobs
      WHERE (status = 'pending' AND run_at <= ?)
         OR (status = 'running' AND updated_at <= ?)
@@ -268,7 +270,7 @@ export async function processDueJobs(db: D1Database, now = new Date()): Promise<
        SET status = 'running', attempt_count = attempt_count + 1,
            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
        WHERE id = ? AND ((status = 'pending' AND run_at <= ?) OR (status = 'running' AND updated_at <= ?))
-       RETURNING id, user_id, job_type, payload_json, status, run_at, attempt_count, idempotency_key`
+       RETURNING id, user_id, job_type, payload_json, status, run_at, attempt_count, idempotency_key, recurrence`
     ).bind(candidate.id, nowIso, staleBefore).first<ScheduledJob>();
     if (!claimed) continue;
 
@@ -277,10 +279,19 @@ export async function processDueJobs(db: D1Database, now = new Date()): Promise<
         throw new Error('Tipo de trabalho não permitido.');
       }
       await createScheduledOutput(db, claimed);
-      await db.prepare(
-        `UPDATE scheduled_jobs SET status = 'completed', last_error = NULL,
-         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND status = 'running'`
-      ).bind(claimed.id).run();
+      if (claimed.recurrence === 'daily' || claimed.recurrence === 'weekly') {
+        const interval = claimed.recurrence === 'daily' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+        const nextRunAt = new Date(now.getTime() + interval).toISOString();
+        await db.prepare(
+          `UPDATE scheduled_jobs SET status = 'pending', run_at = ?, attempt_count = 0, last_error = NULL,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND status = 'running'`
+        ).bind(nextRunAt, claimed.id).run();
+      } else {
+        await db.prepare(
+          `UPDATE scheduled_jobs SET status = 'completed', last_error = NULL,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND status = 'running'`
+        ).bind(claimed.id).run();
+      }
       await db.prepare(
         `INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, outcome, details_json)
          VALUES (?, ?, 'scheduled_job_completed', 'scheduled_job', ?, 'success', ?)`
@@ -364,7 +375,7 @@ export default {
         if (request.method === 'GET') {
           try {
             const jobs = await env.DB.prepare(
-              'SELECT id, job_type, status, run_at, attempt_count, last_error, created_at, updated_at FROM scheduled_jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 100'
+              'SELECT id, job_type, status, run_at, recurrence, attempt_count, last_error, created_at, updated_at FROM scheduled_jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 100'
             ).bind(user.id).all();
             return jsonResponse({ jobs: jobs.results });
           } catch (error) {
@@ -377,6 +388,7 @@ export default {
           try { body = await request.json(); } catch { return jsonResponse({ error: 'JSON inválido.' }, 400); }
           const jobType = body?.type;
           const runAt = typeof body?.runAt === 'string' ? new Date(body.runAt) : null;
+          const recurrence = body?.recurrence === 'daily' || body?.recurrence === 'weekly' ? body.recurrence : 'once';
           const idempotencyKey = typeof body?.idempotencyKey === 'string' ? body.idempotencyKey.trim() : '';
           if (jobType !== 'daily_briefing' && jobType !== 'weekly_review') {
             return jsonResponse({ error: 'Tipo inválido. Use daily_briefing ou weekly_review.' }, 400);
@@ -390,18 +402,18 @@ export default {
           const id = crypto.randomUUID();
           try {
             const existing = await env.DB.prepare(
-              'SELECT id, job_type, status, run_at FROM scheduled_jobs WHERE user_id = ? AND idempotency_key = ?'
+              'SELECT id, job_type, status, run_at, recurrence FROM scheduled_jobs WHERE user_id = ? AND idempotency_key = ?'
             ).bind(user.id, idempotencyKey).first();
             if (existing) return jsonResponse({ job: existing, reused: true });
             await env.DB.prepare(
-              `INSERT INTO scheduled_jobs (id, user_id, job_type, payload_json, status, run_at, idempotency_key)
-               VALUES (?, ?, ?, '{}', 'pending', ?, ?)`
-            ).bind(id, user.id, jobType, runAt.toISOString(), idempotencyKey).run();
+              `INSERT INTO scheduled_jobs (id, user_id, job_type, payload_json, status, run_at, idempotency_key, recurrence)
+               VALUES (?, ?, ?, '{}', 'pending', ?, ?, ?)`
+            ).bind(id, user.id, jobType, runAt.toISOString(), idempotencyKey, recurrence).run();
             await env.DB.prepare(
               `INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, outcome, details_json)
                VALUES (?, ?, 'scheduled_job_created', 'scheduled_job', ?, 'success', ?)`
-            ).bind(crypto.randomUUID(), user.id, id, JSON.stringify({ type: jobType, runAt: runAt.toISOString() })).run();
-            return jsonResponse({ job: { id, type: jobType, status: 'pending', runAt: runAt.toISOString() } }, 201);
+            ).bind(crypto.randomUUID(), user.id, id, JSON.stringify({ type: jobType, runAt: runAt.toISOString(), recurrence })).run();
+            return jsonResponse({ job: { id, type: jobType, status: 'pending', runAt: runAt.toISOString(), recurrence } }, 201);
           } catch (error) {
             console.error('Falha ao criar trabalho agendado:', error);
             return jsonResponse({ error: 'Não foi possível agendar este trabalho.' }, 503);
