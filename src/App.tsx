@@ -172,7 +172,7 @@ export default function App() {
       } else {
         updated = [...realPrev, todayLog];
       }
-      localStorage.setItem('sb_daily_history', JSON.stringify(updated));
+      persistLocalState('sb_daily_history', updated);
       return updated;
     });
   }, [tasks]);
