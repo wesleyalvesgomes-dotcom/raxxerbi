@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, Bot } from 'lucide-react';
+import { Menu, Bot, Cloud } from 'lucide-react';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { MyDayView } from './components/MyDayView';
@@ -16,6 +16,7 @@ import { SalesView } from './components/SalesView';
 import { CommercialBIDashboard } from './components/CommercialBIDashboard';
 import { Sidebar } from './components/Sidebar';
 import { useCommercialData } from './hooks/useCommercialData';
+import { CloudSyncPanel } from './components/CloudSyncPanel';
 
 import {
   DailyHistoryLog,
@@ -190,6 +191,7 @@ export default function App() {
   const [isAIChatOpen, setIsAIChatOpen] = useState<boolean>(false);
   const [aiInitialPrompt, setAiInitialPrompt] = useState<string | undefined>(undefined);
   const [isQuickMemoryOpen, setIsQuickMemoryOpen] = useState<boolean>(false);
+  const [isCloudSyncOpen, setIsCloudSyncOpen] = useState<boolean>(false);
 
   // Sincroniza abas com URL e histórico do navegador
   useEffect(() => {
@@ -623,6 +625,18 @@ export default function App() {
           </main>
         </>
       )}
+
+      {/* Acesso explícito à sincronização segura com D1 */}
+      <button
+        onClick={() => setIsCloudSyncOpen(true)}
+        className="fixed bottom-4 right-4 z-[70] inline-flex items-center gap-2 rounded-full border border-cyan-500/40 bg-[#0B1730] px-4 py-3 text-sm font-semibold text-cyan-200 shadow-xl transition hover:border-cyan-300 hover:bg-[#102342]"
+        title="Backup e sincronização dos dados"
+        aria-label="Abrir backup e sincronização dos dados"
+      >
+        <Cloud className="h-4 w-4" />
+        <span className="hidden sm:inline">Dados e backup</span>
+      </button>
+      {isCloudSyncOpen && <CloudSyncPanel onClose={() => setIsCloudSyncOpen(false)} />}
 
       {/* Persistent AI Chat Advisor Drawer */}
       <AIChatDrawer
