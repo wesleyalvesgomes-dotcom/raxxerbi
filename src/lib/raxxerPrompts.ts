@@ -1,4 +1,5 @@
 // Centralized RAXXER AI Prompts, System Instructions & Gemini REST API Client
+import { getSaoPauloDateString, getSaoPauloWeekday } from '../utils/date';
 
 export const SECOND_BRAIN_SYSTEM_INSTRUCTION = `
 Você é o "RAXXER" — Secretário Pessoal Inteligente de Wesley Gomes (ou Wesley).
@@ -318,8 +319,8 @@ export function buildChatPrompt({
   chatHistory: any[];
 }): string {
   const now = new Date();
-  const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(now);
-  const dayOfWeek = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', timeZone: 'America/Sao_Paulo' }).format(now);
+  const todayStr = getSaoPauloDateString(now);
+  const dayOfWeek = getSaoPauloWeekday(now);
 
   return `
 Você é o RAXXER, Secretário Pessoal de ${profile?.comoSerChamado || profile?.nome || 'Wesley'}.
