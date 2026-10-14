@@ -1,5 +1,3 @@
-PRAGMA foreign_keys = ON;
-
 -- Identity is supplied by the trusted authentication layer (Cloudflare Access).
 -- Never store passwords or trust a user_id sent by the browser.
 CREATE TABLE IF NOT EXISTS users (
