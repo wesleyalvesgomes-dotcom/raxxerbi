@@ -22,6 +22,15 @@ const MAPPINGS: LocalMapping[] = [
 
 type CloudRecord = { id: string; data: unknown };
 type SyncStats = { uploaded: number; downloaded: number; conflicts: number; ignored: number };
+type ScheduledJob = { id: string; job_type: string; status: string; run_at: string; recurrence: 'once' | 'daily' | 'weekly'; attempt_count: number; last_error?: string | null };
+type ScheduledOutput = { id: string; title: string; summary: string; createdAt: string; date: string; stats?: { openTasks: number; dueToday: number; overdueTasks: number; activeGoals: number } };
+
+function defaultLocalDateTime(): string {
+  const date = new Date(Date.now() + 10 * 60 * 1000);
+  date.setSeconds(0, 0);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
 
 function parseLocal(mapping: LocalMapping): CloudRecord[] {
   const raw = localStorage.getItem(mapping.key);
@@ -67,7 +76,69 @@ export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [lastStats, setLastStats] = useState<SyncStats | null>(null);
+  const [jobType, setJobType] = useState<'daily_briefing' | 'weekly_review'>('daily_briefing');
+  const [recurrence, setRecurrence] = useState<'once' | 'daily' | 'weekly'>('once');
+  const [runAtLocal, setRunAtLocal] = useState(defaultLocalDateTime);
+  const [jobs, setJobs] = useState<ScheduledJob[]>([]);
+  const [outputs, setOutputs] = useState<ScheduledOutput[]>([]);
+  const [autonomyLoaded, setAutonomyLoaded] = useState(false);
   const totalLocalRecords = useMemo(() => MAPPINGS.reduce((sum, mapping) => sum + parseLocal(mapping).length, 0), []);
+
+  const loadAutonomy = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const [jobsResponse, outputResponse] = await Promise.all([
+        requestJson('/api/jobs'),
+        requestJson('/api/data/scheduled_outputs'),
+      ]);
+      setJobs(Array.isArray(jobsResponse.jobs) ? jobsResponse.jobs : []);
+      setOutputs(Array.isArray(outputResponse.items) ? outputResponse.items.map((item: CloudRecord) => item.data as ScheduledOutput) : []);
+      setAutonomyLoaded(true);
+      setMessage('Agendamentos e resultados carregados.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível carregar os agendamentos.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createScheduledJob = async () => {
+    setBusy(true);
+    setMessage('');
+    setError('');
+    try {
+      const response = await requestJson('/api/jobs', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: jobType,
+          runAt: new Date(runAtLocal).toISOString(),
+          recurrence,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      });
+      setMessage(response.reused ? 'Este agendamento já existia; nenhum duplicado foi criado.' : 'Agendamento criado. O Worker executará o resumo no horário definido.');
+      await loadAutonomy();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível criar o agendamento.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelScheduledJob = async (id: string) => {
+    setBusy(true);
+    setError('');
+    try {
+      await requestJson('/api/jobs/' + encodeURIComponent(id), { method: 'DELETE' });
+      setMessage('Agendamento cancelado.');
+      await loadAutonomy();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível cancelar o agendamento.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const exportBackup = () => {
     const snapshot: Record<string, unknown> = {};
@@ -186,6 +257,63 @@ export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =
         </div>}
         {message && <p className="mt-4 rounded-lg border border-emerald-800/50 bg-emerald-950/30 p-3 text-sm text-emerald-200">{message}</p>}
         {error && <p role="alert" className="mt-4 rounded-lg border border-red-800/50 bg-red-950/30 p-3 text-sm text-red-200">{error}</p>}
+
+        <div className="mt-5 rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+          <div className="flex items-start gap-3">
+            <RefreshCw className="mt-0.5 h-5 w-5 shrink-0 text-cyan-300" />
+            <div>
+              <p className="font-semibold text-white">Execução autônoma agendada</p>
+              <p className="mt-1 text-sm leading-relaxed text-slate-400">Agende resumos com base apenas nas tarefas e metas que já existem. O RAXXER não cria tarefas nem metas automaticamente.</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-medium text-slate-300">Tipo de resumo
+              <select value={jobType} onChange={(event) => setJobType(event.target.value as 'daily_briefing' | 'weekly_review')} className="mt-1.5 w-full rounded-lg border border-slate-700 bg-[#07101F] px-3 py-2.5 text-sm text-white">
+                <option value="daily_briefing">Resumo diário</option>
+                <option value="weekly_review">Revisão semanal</option>
+              </select>
+            </label>
+            <label className="text-xs font-medium text-slate-300">Frequência
+              <select value={recurrence} onChange={(event) => setRecurrence(event.target.value as 'once' | 'daily' | 'weekly')} className="mt-1.5 w-full rounded-lg border border-slate-700 bg-[#07101F] px-3 py-2.5 text-sm text-white">
+                <option value="once">Uma vez</option>
+                <option value="daily">Todos os dias</option>
+                <option value="weekly">Toda semana</option>
+              </select>
+            </label>
+            <label className="text-xs font-medium text-slate-300 sm:col-span-2">Primeira execução
+              <input type="datetime-local" value={runAtLocal} onChange={(event) => setRunAtLocal(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-700 bg-[#07101F] px-3 py-2.5 text-sm text-white" />
+            </label>
+          </div>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <button onClick={createScheduledJob} disabled={busy || !runAtLocal} className="flex-1 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-60">Criar agendamento</button>
+            <button onClick={loadAutonomy} disabled={busy} className="rounded-xl border border-slate-700 px-3 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-60">Ver execuções</button>
+          </div>
+          {autonomyLoaded && <div className="mt-4 space-y-3">
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Agendamentos recentes</p>
+              {jobs.length === 0 ? <p className="text-sm text-slate-500">Nenhum agendamento encontrado.</p> : jobs.slice(0, 8).map((job) => (
+                <div key={job.id} className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-slate-800 p-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-white">{job.job_type === 'weekly_review' ? 'Revisão semanal' : 'Resumo diário'} · {job.recurrence === 'daily' ? 'diário' : job.recurrence === 'weekly' ? 'semanal' : 'uma vez'}</p>
+                    <p className="mt-1 text-xs text-slate-400">{new Date(job.run_at).toLocaleString('pt-BR')} · {job.status}</p>
+                    {job.last_error && <p className="mt-1 text-xs text-red-300">{job.last_error}</p>}
+                  </div>
+                  {job.status === 'pending' && <button onClick={() => cancelScheduledJob(job.id)} disabled={busy} className="shrink-0 rounded-lg border border-red-900/70 px-2.5 py-1.5 text-xs text-red-200 hover:bg-red-950/50">Cancelar</button>}
+                </div>
+              ))}
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Resultados gerados</p>
+              {outputs.length === 0 ? <p className="text-sm text-slate-500">Ainda não há resultados. O Worker verifica a fila a cada cinco minutos.</p> : outputs.slice(0, 5).map((output) => (
+                <article key={output.id} className="mb-2 rounded-lg border border-slate-800 p-3">
+                  <p className="text-sm font-semibold text-white">{output.title || 'Resumo do RAXXER'}</p>
+                  <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-slate-300">{output.summary}</p>
+                  <p className="mt-2 text-xs text-slate-500">{output.createdAt ? new Date(output.createdAt).toLocaleString('pt-BR') : output.date}</p>
+                </article>
+              ))}
+            </div>
+          </div>}
+        </div>
 
         <div className="mt-5 flex flex-col gap-2 sm:flex-row">
           <button onClick={syncWithoutOverwrite} disabled={busy} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-wait disabled:opacity-60">
