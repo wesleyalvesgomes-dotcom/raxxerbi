@@ -49,7 +49,7 @@ test('scheduled jobs create a deterministic summary from existing records and co
   assert.deepEqual(result, { completed: 1, retried: 0, failed: 0 });
   assert.ok(calls.some((call) => call.sql.includes("VALUES (?, 'scheduled_outputs', ?, ?")));
   assert.ok(calls.some((call) => call.sql.includes("SET status = 'completed'")));
-  const outputWrite = calls.find((call) => call.sql.includes("VALUES (?, 'scheduled_outputs', ?, ?)"));
+  const outputWrite = calls.find((call) => call.sql.includes("VALUES (?, 'scheduled_outputs', ?, ?, strftime"));
   assert.ok(outputWrite);
   const output = JSON.parse(String(outputWrite.values[2]));
   assert.equal(output.jobId, 'job-test-1');
@@ -95,5 +95,5 @@ test('scheduled job runner never accepts an arbitrary job type', async () => {
   const result = await processDueJobs(db as any, new Date('2026-10-14T12:00:00.000Z'));
   assert.deepEqual(result, { completed: 0, retried: 0, failed: 1 });
   assert.ok(calls.some((call) => call.sql.includes("SET status = 'failed'")));
-  assert.ok(!calls.some((call) => call.sql.includes("VALUES (?, 'scheduled_outputs', ?, ?)")));
+  assert.ok(!calls.some((call) => call.sql.includes("VALUES (?, 'scheduled_outputs', ?, ?, strftime")));
 });
