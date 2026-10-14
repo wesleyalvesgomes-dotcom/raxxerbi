@@ -221,17 +221,27 @@ async function createScheduledOutput(db: D1Database, job: ScheduledJob): Promise
   const overdue = activeTasks.filter((task) => typeof task.data === 'string' && task.data < today);
   const activeGoals = goals.filter((goal) => goal && goal.status !== 'concluido');
   const isWeekly = job.job_type === 'weekly_review';
+  const titleOf = (task: any) => typeof task?.titulo === 'string' && task.titulo.trim()
+    ? task.titulo.trim().slice(0, 120)
+    : 'Tarefa sem título';
+  const overdueLines = overdue.slice(0, 5).map((task) => '- ' + titleOf(task) + (task.data ? ' (' + task.data + ')' : ''));
+  const dueTodayLines = dueToday.slice(0, 5).map((task) => '- ' + titleOf(task));
+  const openTaskLines = activeTasks.slice(0, 5).map((task) => '- ' + titleOf(task) + (task.data ? ' (' + task.data + ')' : ''));
   const lines = isWeekly
     ? [
         'Resumo baseado somente nos registros existentes no RAXXER.',
         'Tarefas em aberto: ' + activeTasks.length,
         'Tarefas com data anterior a hoje: ' + overdue.length,
         'Metas em andamento: ' + activeGoals.length,
+        'Tarefas em aberto (até 5):',
+        ...(openTaskLines.length ? openTaskLines : ['- Nenhuma tarefa em aberto.']),
       ]
     : [
         'Resumo baseado somente nos registros existentes no RAXXER.',
         'Tarefas previstas para hoje ainda abertas: ' + dueToday.length,
+        ...(dueTodayLines.length ? ['Tarefas de hoje (até 5):', ...dueTodayLines] : ['Nenhuma tarefa pendente com data de hoje.']),
         'Tarefas com data anterior a hoje ainda abertas: ' + overdue.length,
+        ...(overdueLines.length ? ['Tarefas atrasadas (até 5):', ...overdueLines] : []),
         'Metas em andamento: ' + activeGoals.length,
       ];
   const outputId = job.recurrence === 'once' ? job.id : job.id + '-' + today;
