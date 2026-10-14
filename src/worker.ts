@@ -296,7 +296,7 @@ export async function processDueJobs(db: D1Database, now = new Date()): Promise<
       }
       await db.prepare(
         `INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, outcome, details_json)
-         VALUES (?, ?, 'scheduled_job_completed', 'scheduled_job', ?, 'success', ?)`
+         VALUES (?, ?, 'scheduled_job_executed', 'scheduled_job', ?, 'success', ?)`
       ).bind(crypto.randomUUID(), claimed.user_id, claimed.id, JSON.stringify({ type: claimed.job_type })).run();
       stats.completed += 1;
     } catch (error) {
@@ -386,8 +386,16 @@ export default {
           }
         }
         if (request.method === 'POST') {
+          const contentLength = Number(request.headers.get('Content-Length') || '0');
+          if (contentLength > MAX_REQUEST_BYTES) return jsonResponse({ error: 'A requisição excede o limite de 64 KB.' }, 413);
           let body: any;
-          try { body = await request.json(); } catch { return jsonResponse({ error: 'JSON inválido.' }, 400); }
+          try {
+            const rawBody = await request.text();
+            if (new TextEncoder().encode(rawBody).byteLength > MAX_REQUEST_BYTES) {
+              return jsonResponse({ error: 'A requisição excede o limite de 64 KB.' }, 413);
+            }
+            body = JSON.parse(rawBody || '{}');
+          } catch { return jsonResponse({ error: 'JSON inválido.' }, 400); }
           const jobType = body?.type;
           const runAt = typeof body?.runAt === 'string' ? new Date(body.runAt) : null;
           const recurrence = body?.recurrence === 'daily' || body?.recurrence === 'weekly' ? body.recurrence : 'once';
@@ -407,6 +415,12 @@ export default {
               'SELECT id, job_type, status, run_at, recurrence FROM scheduled_jobs WHERE user_id = ? AND idempotency_key = ?'
             ).bind(user.id, idempotencyKey).first();
             if (existing) return jsonResponse({ job: existing, reused: true });
+            const pendingCount = await env.DB.prepare(
+              "SELECT COUNT(*) AS count FROM scheduled_jobs WHERE user_id = ? AND status = 'pending'"
+            ).bind(user.id).first<{ count: number }>();
+            if ((pendingCount?.count || 0) >= 50) {
+              return jsonResponse({ error: 'Limite de 50 agendamentos pendentes por usuário atingido.' }, 429);
+            }
             await env.DB.prepare(
               `INSERT INTO scheduled_jobs (id, user_id, job_type, payload_json, status, run_at, idempotency_key, recurrence)
                VALUES (?, ?, ?, '{}', 'pending', ?, ?, ?)`
@@ -425,8 +439,10 @@ export default {
       }
 
       if (url.pathname.startsWith('/api/jobs/') && request.method === 'DELETE') {
-        const id = decodeURIComponent(url.pathname.slice('/api/jobs/'.length));
-        if (!id || id.length > 200) return jsonResponse({ error: 'Identificador inválido.' }, 400);
+        let id: string;
+        try { id = decodeURIComponent(url.pathname.slice('/api/jobs/'.length)); }
+        catch { return jsonResponse({ error: 'Identificador inválido.' }, 400); }
+        if (!id || id.length > 200 || id.includes('/')) return jsonResponse({ error: 'Identificador inválido.' }, 400);
         try {
           const result = await env.DB.prepare(
             `UPDATE scheduled_jobs SET status = 'cancelled',
