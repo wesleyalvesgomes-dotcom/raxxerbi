@@ -113,3 +113,17 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_audit_user_created ON audit_log(user_id, created_at);
+
+
+-- Generic user-scoped records allow gradual migration from localStorage without
+-- trusting client-provided user IDs. Collection names are allow-listed by the Worker.
+CREATE TABLE IF NOT EXISTS user_data (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  collection TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  data_json TEXT NOT NULL CHECK (json_valid(data_json)),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  PRIMARY KEY (user_id, collection, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_data_collection
+  ON user_data(user_id, collection, updated_at);
