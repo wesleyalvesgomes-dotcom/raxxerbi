@@ -63,10 +63,9 @@ const getSanitizedLocalStorage = <T,>(key: string, fallback: T): T => {
       const isLegacySeedId = (id: string) => /^(task|goal|proj|mem|review)-\d+$/.test(id);
       const filtered = parsed.filter((item: any) => {
         if (!item) return false;
+        // Remove only stable legacy seed IDs. Never discard a user's real record
+        // merely because its title happens to resemble an old example.
         if (item.id && isLegacySeedId(String(item.id))) return false;
-        if (item.titulo && (item.titulo.includes('energia elétrica') || item.titulo.includes('Caminhada matinal') || item.titulo.includes('Perfil do Usuário'))) return false;
-        if (item.objetivo && item.objetivo.includes('Execução Diária Sem Pendências')) return false;
-        if (item.nome && item.nome.includes('Organização Financeira')) return false;
         return true;
       });
       return filtered as unknown as T;
