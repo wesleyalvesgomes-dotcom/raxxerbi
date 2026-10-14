@@ -51,3 +51,17 @@ test('protected API rejects malformed Access JWTs before touching D1', async () 
   assert.equal(response.status, 401);
   assert.equal((await response.json() as { code: string }).code, 'UNAUTHENTICATED');
 });
+
+
+test('D1 collection endpoints reject unauthenticated access', async () => {
+  const response = await worker.fetch(
+    new Request('https://raxxer.example/api/data/tasks'),
+    {
+      ACCESS_TEAM_DOMAIN: 'example.cloudflareaccess.com',
+      ACCESS_AUD: 'expected-audience',
+      DB: { prepare: () => { throw new Error('Unauthenticated data access must not reach D1'); } },
+    }
+  );
+  assert.equal(response.status, 401);
+  assert.equal((await response.json() as { code: string }).code, 'UNAUTHENTICATED');
+});
