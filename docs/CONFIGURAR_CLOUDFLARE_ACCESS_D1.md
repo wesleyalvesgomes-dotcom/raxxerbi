@@ -28,10 +28,10 @@ O Worker valida assinatura RS256, emissor, audiência, expiração e identidade 
 
 ## 3. Limites desta etapa
 
-- Esta alteração protege as rotas do Worker e registra a identidade autenticada; ainda não migra as tarefas, metas, memórias e dados comerciais do localStorage para D1.
+- Esta alteração protege as rotas do Worker, registra a identidade autenticada e disponibiliza a API autenticada de registros por coleção em /api/data/:collection e /api/data/:collection/:id. As coleções permitidas estão em allowlist e cada consulta é isolada pelo ID verificado do usuário. A interface ainda não foi migrada do localStorage para usar esses endpoints.
 - A interface atual ainda não tem um fluxo de login próprio; a autenticação é fornecida pelo portal Cloudflare Access.
 - O servidor Express local (server.ts) é para desenvolvimento e não substitui a proteção do Worker de produção. Não publique o Express diretamente na internet.
-- A migração cria tabelas para perfil, tarefas, metas, memórias, projetos, histórico, revisões, dados comerciais, trabalhos agendados e auditoria. Os endpoints de leitura/gravação dessas entidades e o motor Cron serão implementados em etapas seguintes.
+- A migração cria tabelas para perfil, tarefas, metas, memórias, projetos, histórico, revisões, dados comerciais, trabalhos agendados, auditoria, registros genéricos por usuário e contadores de limite de uso da IA. O Worker aplica limite fixo de 30 chamadas à IA por usuário por minuto. O motor Cron ainda será implementado em etapa seguinte.
 - A configuração Cloudflare real não pode ser concluída pelo repositório sozinho; depende do UUID do D1, do domínio/AUD do Access e das permissões do painel.
 
 ## 4. Checklist de verificação antes de produção
@@ -43,3 +43,13 @@ O Worker valida assinatura RS256, emissor, audiência, expiração e identidade 
 - [ ] Sem token: API retorna 401; configuração de auth ausente: API retorna 503.
 - [ ] Conta desativada no D1 recebe 403.
 - [ ] Testes de integração executados antes de publicar.
+
+
+## API de dados disponível nesta etapa
+
+- GET /api/data/:collection lista os registros daquela coleção para o usuário autenticado.
+- GET /api/data/:collection/:id lê um registro específico.
+- PUT /api/data/:collection/:id com JSON { "data": ... } cria/atualiza um registro.
+- DELETE /api/data/:collection/:id remove somente aquele registro do usuário autenticado.
+- Coleções permitidas: profile, tasks, goals, memories, projects, daily_history, weekly_reviews, commercial_leads, commercial_lead_history, commercial_interactions, commercial_visits, commercial_proposals, commercial_sales e commercial_goals.
+- Cada item tem limite de 64 KB; a API não aceita user_id do cliente. Não faça a migração automática do localStorage até implementar e testar a estratégia de importação, reconciliação e recuperação.
