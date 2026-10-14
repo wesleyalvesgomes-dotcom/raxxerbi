@@ -17,6 +17,7 @@ import { CommercialBIDashboard } from './components/CommercialBIDashboard';
 import { Sidebar } from './components/Sidebar';
 import { useCommercialData } from './hooks/useCommercialData';
 import { CloudSyncPanel } from './components/CloudSyncPanel';
+import { initializeCloudSync } from './services/cloudSync';
 
 import {
   DailyHistoryLog,
@@ -34,6 +35,11 @@ import {
 
 import { DEFAULT_USER_PROFILE } from './utils/initialData';
 import { getSaoPauloDateString, getSaoPauloWeekday } from './utils/date';
+
+function persistLocalState(key: string, value: unknown): void {
+  localStorage.setItem(key, JSON.stringify(value));
+  window.dispatchEvent(new CustomEvent('raxxer_storage_change', { detail: { key } }));
+}
 
 // Helper to sanitize local storage data and strip legacy seed or "Alex" references
 const getSanitizedLocalStorage = <T,>(key: string, fallback: T): T => {
@@ -212,28 +218,31 @@ export default function App() {
 
   // Sync to localStorage
   useEffect(() => {
-    localStorage.setItem('sb_profile', JSON.stringify(profile));
+    persistLocalState('sb_profile', profile);
   }, [profile]);
 
   useEffect(() => {
-    localStorage.setItem('sb_memories', JSON.stringify(memories));
+    persistLocalState('sb_memories', memories);
   }, [memories]);
 
   useEffect(() => {
-    localStorage.setItem('sb_tasks', JSON.stringify(tasks));
+    persistLocalState('sb_tasks', tasks);
   }, [tasks]);
 
   useEffect(() => {
-    localStorage.setItem('sb_goals', JSON.stringify(goals));
+    persistLocalState('sb_goals', goals);
   }, [goals]);
 
   useEffect(() => {
-    localStorage.setItem('sb_projects', JSON.stringify(projects));
+    persistLocalState('sb_projects', projects);
   }, [projects]);
 
   useEffect(() => {
-    localStorage.setItem('sb_reviews', JSON.stringify(reviews));
+    persistLocalState('sb_reviews', reviews);
   }, [reviews]);
+
+  // Inicia sincronização contínua apenas depois da hidratação local; a ativação exige migração manual.
+  useEffect(() => initializeCloudSync(), []);
 
   // Handlers
   const handleCompleteInterview = (
