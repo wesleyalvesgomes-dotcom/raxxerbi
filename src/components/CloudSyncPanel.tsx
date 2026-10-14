@@ -67,10 +67,6 @@ async function requestJson(path: string, init?: RequestInit): Promise<any> {
   return body;
 }
 
-function localIds(mapping: LocalMapping): Set<string> {
-  return new Set(parseLocal(mapping).map((record) => record.id));
-}
-
 export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -82,7 +78,10 @@ export const CloudSyncPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =
   const [jobs, setJobs] = useState<ScheduledJob[]>([]);
   const [outputs, setOutputs] = useState<ScheduledOutput[]>([]);
   const [autonomyLoaded, setAutonomyLoaded] = useState(false);
-  const totalLocalRecords = useMemo(() => MAPPINGS.reduce((sum, mapping) => sum + parseLocal(mapping).length, 0), []);
+  const totalLocalRecords = useMemo(() => {
+    try { return MAPPINGS.reduce((sum, mapping) => sum + parseLocal(mapping).length, 0); }
+    catch { return 0; }
+  }, []);
 
   const loadAutonomy = async () => {
     setBusy(true);
