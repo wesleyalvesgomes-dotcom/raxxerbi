@@ -133,7 +133,11 @@ async function syncMapping(mapping: LocalMapping): Promise<void> {
   }
 
   for (const id of before.keys()) {
-    if (current.has(id) || !collectionVersions[id]) continue;
+    if (current.has(id)) continue;
+    if (!collectionVersions[id]) {
+      nextSnapshot.delete(id);
+      continue;
+    }
     try {
       await apiRequest('/api/data/' + mapping.collection + '/' + encodeURIComponent(id), {
         method: 'DELETE',
