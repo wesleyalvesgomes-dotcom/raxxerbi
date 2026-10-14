@@ -9,7 +9,7 @@ Esta branch prepara a base de autenticação e o schema. **Não está pronta par
 3. A partir de um ambiente autenticado com Wrangler, aplique a migração primeiro em preview e depois em produção:
    - npx wrangler d1 migrations apply raxxerbi-db --local
    - npx wrangler d1 migrations apply raxxerbi-db --remote
-4. Confirme que a migração 0001_initial_schema.sql aparece como aplicada antes de publicar o Worker.
+4. Confirme que as migrações 0001_initial_schema.sql e 0002_scheduled_job_recurrence.sql aparecem como aplicadas antes de publicar o Worker.
 
 Não aplique a migração em produção antes de confirmar o banco correto e revisar a configuração.
 
@@ -31,7 +31,7 @@ O Worker valida assinatura RS256, emissor, audiência, expiração e identidade 
 - Esta alteração protege as rotas do Worker, registra a identidade autenticada e disponibiliza a API autenticada de registros por coleção em /api/data/:collection e /api/data/:collection/:id. As coleções permitidas estão em allowlist e cada consulta é isolada pelo ID verificado do usuário. A interface ainda não foi migrada do localStorage para usar esses endpoints.
 - A interface atual ainda não tem um fluxo de login próprio; a autenticação é fornecida pelo portal Cloudflare Access.
 - O servidor Express local (server.ts) é para desenvolvimento e não substitui a proteção do Worker de produção. Não publique o Express diretamente na internet.
-- A migração cria tabelas para perfil, tarefas, metas, memórias, projetos, histórico, revisões, dados comerciais, trabalhos agendados, auditoria, registros genéricos por usuário e contadores de limite de uso da IA. O Worker aplica limite fixo de 30 chamadas à IA por usuário por minuto. O motor Cron ainda será implementado em etapa seguinte.
+- As migrações criam tabelas para perfil, tarefas, metas, memórias, projetos, histórico, revisões, dados comerciais, trabalhos agendados, auditoria, registros genéricos por usuário e contadores de limite de uso da IA. O Worker aplica limite fixo de 30 chamadas à IA por usuário por minuto. O Cron consulta a fila a cada cinco minutos, reivindica jobs atomicamente, registra auditoria e tenta novamente falhas até três tentativas.
 - A configuração Cloudflare real não pode ser concluída pelo repositório sozinho; depende do UUID do D1, do domínio/AUD do Access e das permissões do painel.
 
 ## 4. Checklist de verificação antes de produção
@@ -53,3 +53,36 @@ O Worker valida assinatura RS256, emissor, audiência, expiração e identidade 
 - DELETE /api/data/:collection/:id remove somente aquele registro do usuário autenticado.
 - Coleções permitidas: profile, tasks, goals, memories, projects, daily_history, weekly_reviews, commercial_leads, commercial_lead_history, commercial_interactions, commercial_visits, commercial_proposals, commercial_sales e commercial_goals.
 - Cada item tem limite de 64 KB; a API não aceita user_id do cliente. Não faça a migração automática do localStorage até implementar e testar a estratégia de importação, reconciliação e recuperação.
+
+
+## Sincronização segura do navegador para D1
+
+A interface oferece **Dados e backup** no canto inferior. A sincronização é manual e só ocorre após clicar no botão; não há envio automático na inicialização.
+
+- Exportar backup gera um JSON com as chaves locais suportadas. O arquivo contém dados pessoais e comerciais; proteja-o.
+- Sincronizar verifica a identidade em `/api/me`, envia apenas registros ausentes na nuvem e importa registros que faltam localmente.
+- Em caso de conflito de ID, os dois lados não são sobrescritos: o registro local continua local e o remoto continua remoto.
+- IDs conhecidos de dados-semente antigos (padrões `task-1`, `goal-1`, `proj-1`, `mem-1`, `review-1`) não são enviados como registros reais.
+- A sincronização cobre perfil, tarefas, metas, memórias, projetos, histórico diário, revisões semanais e coleções do BI comercial.
+- Após sincronizar, use **Recarregar aplicação** para que o estado React carregue os registros recém-importados.
+
+## Execução agendada
+
+O Worker usa um Cron Trigger a cada cinco minutos. A API exige identidade Cloudflare Access verificada e só permite dois tipos fechados de job: `daily_briefing` e `weekly_review`. O job gera um resumo determinístico a partir de tarefas e metas existentes; não cria tarefas, metas ou hábitos.
+
+- `GET /api/jobs`: lista agendamentos do usuário autenticado.
+- `POST /api/jobs`: cria um agendamento com `type`, `runAt` ISO 8601, `recurrence` (`once`, `daily`, `weekly`) e `idempotencyKey`.
+- `DELETE /api/jobs/:id`: cancela apenas um job pendente pertencente ao usuário.
+- Resultados aparecem em `GET /api/data/scheduled_outputs`.
+- O mecanismo limita a consulta a 25 jobs por execução, reivindica cada job com atualização condicional, recupera jobs `running` abandonados após 15 minutos, usa até três tentativas e registra sucessos/falhas em `audit_log`.
+- Recorrências são reprogramadas após a execução com intervalo diário ou semanal. O horário é relativo ao momento em que a execução terminou; isso evita uma fila de execuções atrasadas após indisponibilidade.
+- O resultado é persistido no D1. Este estágio não envia notificações por e-mail, WhatsApp ou push; não há integração externa configurada.
+
+### Antes de considerar pronto para produção
+
+- [ ] Aplicar ambas as migrações em D1 de teste e validar a fila.
+- [ ] Validar Access com uma identidade real e uma conta desativada.
+- [ ] Fazer sincronização manual com backup e conferir os conflitos preservados.
+- [ ] Confirmar que o Cron Trigger aparece no Worker publicado e executar um job de teste.
+- [ ] Configurar o UUID D1 real, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` e o secret `GEMINI_API_KEY`.
+- [ ] Não mesclar nem publicar enquanto o CI e os testes de integração com Cloudflare real não passarem.
