@@ -496,19 +496,20 @@ export default {
           try {
             if (itemId !== undefined) {
               const record = await env.DB.prepare(
-                'SELECT item_id, data_json FROM user_data WHERE user_id = ? AND collection = ? AND item_id = ?'
-              ).bind(user.id, collection, itemId).first<{ item_id: string; data_json: string }>();
+                'SELECT item_id, data_json, updated_at FROM user_data WHERE user_id = ? AND collection = ? AND item_id = ?'
+              ).bind(user.id, collection, itemId).first<{ item_id: string; data_json: string; updated_at: string }>();
               if (!record) return jsonResponse({ error: 'Registro não encontrado.' }, 404);
-              return jsonResponse({ id: record.item_id, data: JSON.parse(record.data_json) });
+              return jsonResponse({ id: record.item_id, data: JSON.parse(record.data_json), updatedAt: record.updated_at });
             }
             const records = await env.DB.prepare(
-              'SELECT item_id, data_json FROM user_data WHERE user_id = ? AND collection = ? ORDER BY updated_at DESC, item_id ASC'
-            ).bind(user.id, collection).all<{ item_id: string; data_json: string }>();
+              'SELECT item_id, data_json, updated_at FROM user_data WHERE user_id = ? AND collection = ? ORDER BY updated_at DESC, item_id ASC'
+            ).bind(user.id, collection).all<{ item_id: string; data_json: string; updated_at: string }>();
             return jsonResponse({
               collection,
               items: records.results.map((record) => ({
                 id: record.item_id,
                 data: JSON.parse(record.data_json),
+                updatedAt: record.updated_at,
               })),
             });
           } catch (error) {
@@ -539,15 +540,40 @@ export default {
           if (typeof serialized !== 'string' || serialized.length > MAX_REQUEST_BYTES) {
             return jsonResponse({ error: 'O registro é inválido ou excede 64 KB.' }, 413);
           }
+          const hasExpectedVersion = Object.prototype.hasOwnProperty.call(recordBody, 'expectedUpdatedAt');
+          const expectedVersion = recordBody.expectedUpdatedAt;
+          if (hasExpectedVersion && expectedVersion !== null && (typeof expectedVersion !== 'string' || expectedVersion.length > 100)) {
+            return jsonResponse({ error: 'Versão de registro inválida.' }, 400);
+          }
           try {
-            await env.DB.prepare(
-              `INSERT INTO user_data (user_id, collection, item_id, data_json, updated_at)
-               VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-               ON CONFLICT(user_id, collection, item_id) DO UPDATE SET
-                 data_json = excluded.data_json,
-                 updated_at = excluded.updated_at`
-            ).bind(user.id, collection, itemId, serialized).run();
-            return jsonResponse({ ok: true, id: itemId });
+            let saved: { updated_at: string } | null;
+            if (hasExpectedVersion && expectedVersion === null) {
+              saved = await env.DB.prepare(
+                `INSERT INTO user_data (user_id, collection, item_id, data_json, updated_at)
+                 VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                 ON CONFLICT(user_id, collection, item_id) DO NOTHING
+                 RETURNING updated_at`
+              ).bind(user.id, collection, itemId, serialized).first<{ updated_at: string }>();
+            } else if (hasExpectedVersion) {
+              saved = await env.DB.prepare(
+                `UPDATE user_data SET data_json = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                 WHERE user_id = ? AND collection = ? AND item_id = ? AND updated_at = ?
+                 RETURNING updated_at`
+              ).bind(serialized, user.id, collection, itemId, expectedVersion).first<{ updated_at: string }>();
+            } else {
+              saved = await env.DB.prepare(
+                `INSERT INTO user_data (user_id, collection, item_id, data_json, updated_at)
+                 VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                 ON CONFLICT(user_id, collection, item_id) DO UPDATE SET
+                   data_json = excluded.data_json,
+                   updated_at = excluded.updated_at
+                 RETURNING updated_at`
+              ).bind(user.id, collection, itemId, serialized).first<{ updated_at: string }>();
+            }
+            if (!saved) {
+              return jsonResponse({ error: 'O registro foi alterado em outro dispositivo. Seus dados locais foram preservados; sincronize novamente antes de tentar.' }, 409);
+            }
+            return jsonResponse({ ok: true, id: itemId, updatedAt: saved.updated_at });
           } catch (error) {
             console.error('Falha ao salvar dados do usuário no D1:', error);
             return jsonResponse({ error: 'Não foi possível salvar o registro.' }, 503);
@@ -555,10 +581,38 @@ export default {
         }
 
         if (request.method === 'DELETE' && itemId !== undefined) {
+          let expectedVersion: string | null = null;
+          let hasExpectedVersion = false;
           try {
-            await env.DB.prepare(
-              'DELETE FROM user_data WHERE user_id = ? AND collection = ? AND item_id = ?'
-            ).bind(user.id, collection, itemId).run();
+            const rawBody = await request.text();
+            if (rawBody) {
+              const deleteBody = JSON.parse(rawBody);
+              hasExpectedVersion = Object.prototype.hasOwnProperty.call(deleteBody || {}, 'expectedUpdatedAt');
+              expectedVersion = deleteBody?.expectedUpdatedAt;
+              if (hasExpectedVersion && (typeof expectedVersion !== 'string' || expectedVersion.length > 100)) {
+                return jsonResponse({ error: 'Versão de registro inválida.' }, 400);
+              }
+            }
+          } catch {
+            return jsonResponse({ error: 'O corpo da requisição deve ser JSON válido.' }, 400);
+          }
+          try {
+            if (hasExpectedVersion) {
+              const result = await env.DB.prepare(
+                'DELETE FROM user_data WHERE user_id = ? AND collection = ? AND item_id = ? AND updated_at = ?'
+              ).bind(user.id, collection, itemId, expectedVersion).run() as { meta?: { changes?: number } };
+              if (!result.meta?.changes) {
+                const current = await env.DB.prepare(
+                  'SELECT updated_at FROM user_data WHERE user_id = ? AND collection = ? AND item_id = ?'
+                ).bind(user.id, collection, itemId).first();
+                if (current) return jsonResponse({ error: 'O registro foi alterado em outro dispositivo; a exclusão foi cancelada.' }, 409);
+                return jsonResponse({ error: 'Registro não encontrado.' }, 404);
+              }
+            } else {
+              await env.DB.prepare(
+                'DELETE FROM user_data WHERE user_id = ? AND collection = ? AND item_id = ?'
+              ).bind(user.id, collection, itemId).run();
+            }
             return jsonResponse({ ok: true, id: itemId });
           } catch (error) {
             console.error('Falha ao excluir dados do usuário no D1:', error);
