@@ -13,6 +13,7 @@ import {
   BookmarkPlus,
 } from 'lucide-react';
 import { AIChatMessage, DailyHistoryLog, GoalItem, MemoryItem, TaskItem, TaskPriority, TaskStatus, UserProfile } from '../types';
+import { getSaoPauloDateString } from '../utils/date';
 
 interface AIChatDrawerProps {
   isOpen: boolean;
@@ -143,8 +144,8 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
                   titulo: act.titulo || 'Nova Tarefa',
                   descricao: act.descricao || '',
                   prioridade: (act.prioridade as TaskPriority) || 'media',
-                  horarioSugerido: act.horarioSugerido,
-                  tempoEstimadoMinutos: act.tempoEstimadoMinutos || 30,
+                  horario: act.horarioSugerido,
+                  dataCriacao: getSaoPauloDateString(),
                   concluida: false,
                   status: 'pendente',
                   data: act.data,
